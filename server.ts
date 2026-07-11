@@ -73,7 +73,7 @@ async function startServer() {
     await applyFaststart(req.file.path);
 
     // Return the URL to the uploaded file
-    const fileUrl = `/play?v=${req.file.filename}`;
+    const fileUrl = `/uploads/${req.file.filename}`;
     res.json({ url: fileUrl });
   });
 
@@ -117,7 +117,7 @@ async function startServer() {
       writeStream.end(async () => {
         fs.rmdirSync(chunkDir);
         await applyFaststart(finalPath);
-        res.json({ url: `/play?v=${finalFilename}` });
+        res.json({ url: `/uploads/${finalFilename}` });
       });
     } catch (err) {
       console.error(err);

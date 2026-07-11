@@ -209,7 +209,7 @@ export default function CourseDetails() {
                   playsInline
                   className="w-full h-full absolute inset-0 bg-black"
                 >
-                  <source src={activeLesson.videoUrl.replace('/play?v=', '/uploads/')} type="video/mp4" />
+                  <source src={activeLesson.videoUrl} type="video/mp4" />
                   Your browser does not support the video tag.
                 </video>
               )
