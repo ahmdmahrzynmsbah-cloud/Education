@@ -1,0 +1,32 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores profile information for students and teachers.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 100 },
+        "name": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "pattern": "^01[0125][0-9]{8}$" },
+        "governorate": { "type": "string", "maxLength": 50 },
+        "role": { "type": "string", "enum": ["student", "teacher"] },
+        
+        "grade": { "type": "string", "maxLength": 50 },
+        "school": { "type": "string", "maxLength": 100 },
+        "parentPhone": { "type": "string", "pattern": "^01[0125][0-9]{8}$" },
+        
+        "subject": { "type": "string", "maxLength": 50 },
+        "nationalId": { "type": "string", "pattern": "^[23][0-9]{13}$" },
+        "dateOfBirth": { "type": "string", "maxLength": 20 },
+        "teachingGrades": { "type": "array", "maxLength": 3 }
+      },
+      "required": ["email", "name", "phone", "governorate", "role"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "User" },
+      "description": "User profiles."
+    }
+  }
+}
