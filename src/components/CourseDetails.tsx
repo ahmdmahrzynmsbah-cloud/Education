@@ -202,14 +202,16 @@ export default function CourseDetails() {
                   allowFullScreen
                 />
               ) : (
-                <iframe 
+                <video 
                   key={activeLesson.videoUrl}
-                  src={activeLesson.videoUrl} 
-                  title={activeLesson.title}
+                  controls
+                  preload="auto"
+                  playsInline
                   className="w-full h-full absolute inset-0 bg-black"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
+                >
+                  <source src={activeLesson.videoUrl.replace('/play?v=', '/uploads/')} type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
               )
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 bg-gray-900">
