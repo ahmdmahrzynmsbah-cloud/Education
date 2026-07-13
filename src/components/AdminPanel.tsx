@@ -6,7 +6,8 @@ import {
   Eye, EyeOff, Printer, X, Calendar, User, Mail, Phone, Lock, 
   GraduationCap, Book, AlertTriangle, FileText, Settings, Sparkles, 
   Hash, Award, FileCheck, Check, Activity, ShieldAlert,
-  MapPin, School, PhoneCall, Layers, Clock
+  MapPin, School, PhoneCall, Layers, Clock, Search, Filter,
+  ArrowUpDown, SlidersHorizontal, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
@@ -90,6 +91,12 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'students' | 'teachers' | 'parents'>('students');
+
+  // Search and Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [gradeFilter, setGradeFilter] = useState('all');
+  const [subjectFilter, setSubjectFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('name_asc');
 
   // Modals state
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
@@ -226,12 +233,63 @@ export default function AdminPanel() {
     window.print();
   };
 
-  const filteredUsers = users.filter(u => {
-    if (activeTab === 'students') return u.role === 'student' || !u.role;
-    if (activeTab === 'teachers') return u.role === 'teacher';
-    if (activeTab === 'parents') return u.role === 'parent';
-    return false;
-  });
+  // Extract unique subjects from teachers for dynamic filter
+  const teacherSubjects = Array.from(new Set(
+    users
+      .filter(u => u.role === 'teacher' && u.subject)
+      .map(u => u.subject.trim())
+  )) as string[];
+
+  const filteredUsers = users
+    .filter(u => {
+      if (activeTab === 'students') return u.role === 'student' || !u.role;
+      if (activeTab === 'teachers') return u.role === 'teacher';
+      if (activeTab === 'parents') return u.role === 'parent';
+      return false;
+    })
+    .filter(u => {
+      if (!searchQuery.trim()) return true;
+      const query = searchQuery.toLowerCase().trim();
+      const nameMatch = (u.name || '').toLowerCase().includes(query);
+      const emailMatch = (u.email || '').toLowerCase().includes(query);
+      const phoneMatch = (u.phone || '').toLowerCase().includes(query);
+      const gradeMatch = activeTab === 'students' && (u.grade || '').toLowerCase().includes(query);
+      const subjectMatch = activeTab === 'teachers' && (u.subject || '').toLowerCase().includes(query);
+      return nameMatch || emailMatch || phoneMatch || gradeMatch || subjectMatch;
+    })
+    .filter(u => {
+      if (gradeFilter === 'all') return true;
+      if (activeTab === 'students') {
+        return u.grade === gradeFilter;
+      }
+      if (activeTab === 'teachers') {
+        return Array.isArray(u.teachingGrades) && u.teachingGrades.includes(gradeFilter);
+      }
+      return true;
+    })
+    .filter(u => {
+      if (activeTab !== 'teachers' || subjectFilter === 'all') return true;
+      return (u.subject || '').trim() === subjectFilter;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'name_asc') {
+        return (a.name || '').localeCompare(b.name || '', 'ar');
+      }
+      if (sortBy === 'name_desc') {
+        return (b.name || '').localeCompare(a.name || '', 'ar');
+      }
+      if (sortBy === 'date_desc') {
+        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tB - tA;
+      }
+      if (sortBy === 'date_asc') {
+        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tA - tB;
+      }
+      return 0;
+    });
 
   const studentsCount = users.filter(u => u.role === 'student' || !u.role).length;
   const teachersCount = users.filter(u => u.role === 'teacher').length;
@@ -331,6 +389,142 @@ export default function AdminPanel() {
           </button>
         </div>
 
+        {/* Search and Filters Section */}
+        <div className="bg-gray-50/50 dark:bg-[#0D0D12]/30 p-4 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] mb-6 flex flex-col gap-4 animate-in fade-in duration-200">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            {/* Search Input */}
+            <div className="relative md:col-span-5">
+              <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+              <input
+                type="text"
+                placeholder={
+                  activeTab === 'students' 
+                    ? "بحث عن طالب بالاسم، الهاتف، البريد أو الصف..." 
+                    : activeTab === 'teachers' 
+                      ? "بحث عن معلم بالاسم، الهاتف، البريد أو المادة..." 
+                      : "بحث عن ولي أمر بالاسم، الهاتف أو البريد..."
+                }
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pr-10 pl-4 py-2.5 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:ring-1 focus:ring-[#00B4D8] dark:focus:ring-[#D4AF37] transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Grade Filter (Visible for students and teachers) */}
+            {(activeTab === 'students' || activeTab === 'teachers') ? (
+              <div className="relative md:col-span-3">
+                <Filter className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                <select
+                  value={gradeFilter}
+                  onChange={(e) => setGradeFilter(e.target.value)}
+                  className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pr-10 pl-4 py-2.5 text-sm font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] transition-all appearance-none cursor-pointer"
+                >
+                  <option value="all">كل الصفوف الدراسية</option>
+                  <option value="الأول الإعدادي">الأول الإعدادي</option>
+                  <option value="الثاني الإعدادي">الثاني الإعدادي</option>
+                  <option value="الثالث الإعدادي">الثالث الإعدادي</option>
+                  <option value="الأول الثانوي">الأول الثانوي</option>
+                  <option value="الثاني الثانوي">الثاني الثانوي</option>
+                  <option value="الثالث الثانوي">الثالث الثانوي</option>
+                </select>
+              </div>
+            ) : (
+              <div className="hidden md:block md:col-span-3"></div>
+            )}
+
+            {/* Subject Filter (Visible only for teachers) */}
+            {activeTab === 'teachers' ? (
+              <div className="relative md:col-span-2">
+                <BookOpen className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                <select
+                  value={subjectFilter}
+                  onChange={(e) => setSubjectFilter(e.target.value)}
+                  className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pr-10 pl-4 py-2.5 text-sm font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] transition-all appearance-none cursor-pointer"
+                >
+                  <option value="all">كل التخصصات</option>
+                  {teacherSubjects.map((sub) => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="hidden md:block md:col-span-2"></div>
+            )}
+
+            {/* Sorting */}
+            <div className="relative md:col-span-2">
+              <ArrowUpDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pr-10 pl-4 py-2.5 text-sm font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] transition-all appearance-none cursor-pointer"
+              >
+                <option value="name_asc">الاسم (أ - ي)</option>
+                <option value="name_desc">الاسم (ي - أ)</option>
+                <option value="date_desc">التسجيل (الأحدث)</option>
+                <option value="date_asc">التسجيل (الأقدم)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Active filter badges / Reset indicator */}
+          {(searchQuery || gradeFilter !== 'all' || subjectFilter !== 'all' || sortBy !== 'name_asc') && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 dark:border-[#2D2D3D] pt-3 text-xs font-bold text-gray-500 dark:text-gray-400">
+              <div className="flex flex-wrap items-center gap-2">
+                <span>الفلاتر النشطة:</span>
+                {searchQuery && (
+                  <span className="bg-[#00B4D8]/10 text-[#00B4D8] dark:text-[#00B4D8] dark:bg-[#00B4D8]/5 px-2.5 py-1 rounded-lg border border-[#00B4D8]/20 flex items-center gap-1">
+                    البحث: "{searchQuery}"
+                    <button onClick={() => setSearchQuery('')}><X className="w-3 h-3 hover:text-red-500" /></button>
+                  </span>
+                )}
+                {gradeFilter !== 'all' && (
+                  <span className="bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400 px-2.5 py-1 rounded-lg border border-purple-200/50 flex items-center gap-1">
+                    الصف: {gradeFilter}
+                    <button onClick={() => setGradeFilter('all')}><X className="w-3 h-3 hover:text-red-500" /></button>
+                  </span>
+                )}
+                {subjectFilter !== 'all' && (
+                  <span className="bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400 px-2.5 py-1 rounded-lg border border-amber-200/50 flex items-center gap-1">
+                    المادة: {subjectFilter}
+                    <button onClick={() => setSubjectFilter('all')}><X className="w-3 h-3 hover:text-red-500" /></button>
+                  </span>
+                )}
+                {sortBy !== 'name_asc' && (
+                  <span className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 px-2.5 py-1 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center gap-1">
+                    الترتيب: {
+                      sortBy === 'name_desc' ? 'الاسم تنازلياً' :
+                      sortBy === 'date_desc' ? 'الأحدث تسجيلاً' : 'الأقدم تسجيلاً'
+                    }
+                    <button onClick={() => setSortBy('name_asc')}><X className="w-3 h-3 hover:text-red-500" /></button>
+                  </span>
+                )}
+              </div>
+              
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setGradeFilter('all');
+                  setSubjectFilter('all');
+                  setSortBy('name_asc');
+                }}
+                className="text-red-500 hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1 transition-colors py-1 px-2.5 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                إعادة ضبط الفلاتر
+              </button>
+            </div>
+          )}
+        </div>
+
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <Loader2 className="w-8 h-8 text-[#00B4D8] dark:text-[#D4AF37] animate-spin" />
@@ -350,7 +544,36 @@ export default function AdminPanel() {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((user) => (
+                {filteredUsers.length === 0 ? (
+                  <tr>
+                    <td colSpan={activeTab === 'students' || activeTab === 'teachers' ? 6 : 5} className="py-16 text-center text-gray-400 dark:text-gray-500 font-bold text-sm">
+                      <div className="flex flex-col items-center justify-center gap-3">
+                        <div className="w-16 h-16 rounded-3xl bg-gray-50 dark:bg-[#0D0D12] border border-dashed border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-400">
+                          <SlidersHorizontal className="w-7 h-7 stroke-[1.5]" />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-gray-900 dark:text-white font-black text-base">لم يتم العثور على نتائج</p>
+                          <p className="text-xs text-gray-400 dark:text-gray-500">جرب تعديل كلمات البحث أو تصفية الفلاتر للحصول على نتائج مغايرة.</p>
+                        </div>
+                        {(searchQuery || gradeFilter !== 'all' || subjectFilter !== 'all') && (
+                          <button
+                            onClick={() => {
+                              setSearchQuery('');
+                              setGradeFilter('all');
+                              setSubjectFilter('all');
+                              setSortBy('name_asc');
+                            }}
+                            className="mt-2 text-xs font-black text-[#00B4D8] dark:text-[#D4AF37] hover:underline flex items-center gap-1.5"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            إعادة تعيين كافة الفلاتر والبحث
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredUsers.map((user) => (
                   <tr key={user.id} className="border-b border-gray-50 dark:border-[#2D2D3D]/50 hover:bg-gray-50 dark:hover:bg-[#0D0D12] transition-colors">
                     {/* Beautiful styled user avatar and name */}
                     <td className="py-4 font-bold text-gray-900 dark:text-white text-sm">
@@ -442,7 +665,7 @@ export default function AdminPanel() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
           </div>

@@ -23,6 +23,7 @@ import InteractiveSchedule from './InteractiveSchedule';
 import LuxuriousLoader from './LuxuriousLoader';
 import QuickNotes from './QuickNotes';
 import LiveClassroom from './LiveClassroom';
+import ComprehensiveAnalytics from './ComprehensiveAnalytics';
 
 const MOCK_TEACHER_STATS = [
   { id: 1, title: 'إجمالي الطلاب', value: '1,240', icon: Users, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
@@ -1799,13 +1800,7 @@ export default function Dashboard() {
                       <p className="text-gray-500 dark:text-gray-400 font-medium mt-1">تابع الأداء والتفاعل بشكل مباشر</p>
                     </div>
                   </div>
-                  {userData?.role === "teacher" ? (
-                    <TeacherAnalytics teacherId={userData.id} />
-                  ) : (
-                    <div className="bg-gray-50 dark:bg-[#0D0D12] p-6 rounded-2xl border border-gray-200 dark:border-[#2D2D3D] text-center">
-                       <p className="text-gray-500 font-medium">سيتم عرض تقارير مفصلة عن أداء الطالب هنا بعد الانتهاء من الاختبارات.</p>
-                    </div>
-                  )}
+                  <ComprehensiveAnalytics userData={userData} linkedStudent={linkedStudent} />
                 </div>
               </motion.div>
             )}
