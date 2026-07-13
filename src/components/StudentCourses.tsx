@@ -201,66 +201,101 @@ export default function StudentCourses({ userData }: StudentCoursesProps) {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.3, delay: index * 0.05 }}
-                className="bg-white dark:bg-[#1A1A24] rounded-2xl overflow-hidden shadow-sm border border-gray-200 dark:border-[#2D2D3D] group hover:shadow-md transition-all flex flex-col relative h-full"
+                className="bg-white dark:bg-[#1A1A24] rounded-3xl overflow-hidden shadow-sm hover:shadow-xl border border-gray-150 dark:border-[#2D2D3D] group transition-all duration-300 flex flex-col relative h-full hover:-translate-y-1"
               >
-                <Link to={`/course/${course.id}`} className="absolute inset-0 z-0"></Link>
-                <div className="h-48 relative overflow-hidden bg-gray-100 dark:bg-[#222230] pointer-events-none">
+                <Link to={`/course/${course.id}`} className="absolute inset-0 z-10"></Link>
+                
+                {/* Image Container with strict 16:10 Aspect Ratio */}
+                <div className="aspect-[16/10] w-full relative overflow-hidden bg-gray-50 dark:bg-[#15151F] pointer-events-none">
                   {course.imageUrl ? (
-                    <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=800&auto=format&fit=crop';
-                    }} />
+                    <img 
+                      src={course.imageUrl} 
+                      alt={course.title} 
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=800&auto=format&fit=crop';
+                      }} 
+                    />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <BookOpen className="w-12 h-12 text-gray-300 dark:text-gray-600" />
+                      <BookOpen className="w-12 h-12 text-gray-300 dark:text-gray-700 stroke-[1.5]" />
                     </div>
                   )}
-                  <div className="absolute top-4 left-4 bg-white/90 dark:bg-black/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-bold text-[#00B4D8] dark:text-[#D4AF37] shadow-sm">
+                  
+                  {/* Subject Badge */}
+                  <div className="absolute top-4 right-4 bg-white/95 dark:bg-black/80 backdrop-blur-md px-3 py-1 rounded-xl text-xs font-black text-[#00B4D8] dark:text-[#D4AF37] shadow-sm">
                     {course.subject}
                   </div>
-                </div>
-                <div className="p-6 flex-1 flex flex-col pointer-events-none">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-xs text-[#00B4D8] dark:text-[#D4AF37] font-bold">{course.teacherName}</div>
-                    <div className="flex items-center gap-1">
-                      <Star className="w-3.5 h-3.5 fill-[#F5A623] text-[#F5A623]" />
-                      <span className="text-xs font-black text-gray-900 dark:text-white">
-                        {(courseRatings[course.id]?.average || 5.0).toFixed(1)}
-                      </span>
-                      <span className="text-[10px] text-gray-400 dark:text-gray-500 font-bold">
-                        ({courseRatings[course.id]?.count || 0})
-                      </span>
-                    </div>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{course.title}</h3>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 line-clamp-2 leading-relaxed flex-1">{course.description}</p>
-                  
-                  {isEnrolled && (
-                    <div className="mb-5 bg-gray-50/50 dark:bg-[#222230]/30 p-3 rounded-xl border border-gray-100 dark:border-[#2D2D3D]">
-                      <div className="flex items-center justify-between mb-1.5 text-xs font-black">
-                        <span className="text-gray-500 dark:text-gray-400">نسبة التقدم الدراسي</span>
-                        <span className="text-[#00B4D8] dark:text-[#D4AF37] font-bold font-mono">
-                          {percent.toFixed(1)}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 dark:bg-[#2D2D3D] rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="h-full bg-gradient-to-r from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#B8860B] rounded-full transition-all duration-500"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-                      <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5 font-bold flex justify-between items-center">
-                        <span>إكمال {completedCount} من {course.lessonsCount} دروس</span>
-                        <span>{percent === 100 ? "مكتملة 🌟" : "قيد الدراسة 📚"}</span>
-                      </div>
-                    </div>
-                  )}
 
-                  <div className="flex items-center justify-between mt-auto pt-4 border-t border-gray-100 dark:border-[#2D2D3D]">
-                    <span className="text-2xl font-black text-[#00B4D8] dark:text-[#D4AF37]">
-                      {course.price === 0 ? 'مجاني' : `${course.price} ج.م`}
-                    </span>
-                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium">
-                      {course.lessonsCount} درس
+                  {/* Grade Badge */}
+                  <div className="absolute top-4 left-4 bg-gray-900/80 backdrop-blur-md px-3 py-1 rounded-xl text-xs font-black text-white shadow-sm">
+                    {course.grade}
+                  </div>
+                </div>
+
+                {/* Content Container */}
+                <div className="p-5 flex-1 flex flex-col justify-between pointer-events-none">
+                  <div>
+                    {/* Teacher & Rating Header */}
+                    <div className="flex items-center justify-between mb-3 text-xs">
+                      <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 font-bold">
+                        <div className="w-5 h-5 rounded-full bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-[10px] font-black text-[#00B4D8] dark:text-[#D4AF37]">
+                          {course.teacherName?.charAt(0) || 'أ'}
+                        </div>
+                        <span>{course.teacherName}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-1 bg-[#F5A623]/10 text-[#F5A623] px-2 py-0.5 rounded-lg font-bold">
+                        <Star className="w-3 h-3 fill-[#F5A623]" />
+                        <span>{(courseRatings[course.id]?.average || 5.0).toFixed(1)}</span>
+                        <span className="text-[9px] opacity-70">({courseRatings[course.id]?.count || 0})</span>
+                      </div>
+                    </div>
+
+                    {/* Title */}
+                    <h3 className="text-lg font-black text-gray-950 dark:text-white mb-2 group-hover:text-[#00B4D8] dark:group-hover:text-[#D4AF37] transition-colors line-clamp-1">
+                      {course.title}
+                    </h3>
+
+                    {/* Description */}
+                    <p className="text-gray-500 dark:text-gray-400 text-xs mb-4 line-clamp-2 leading-relaxed">
+                      {course.description}
+                    </p>
+                  </div>
+
+                  <div>
+                    {/* Progress tracker for enrolled courses */}
+                    {isEnrolled && (
+                      <div className="mb-4 bg-gray-50 dark:bg-[#222230]/30 p-3 rounded-2xl border border-gray-100 dark:border-[#2D2D3D]">
+                        <div className="flex items-center justify-between mb-1.5 text-[10px] font-black">
+                          <span className="text-gray-400 dark:text-gray-500">التقدم الدراسي</span>
+                          <span className="text-[#00B4D8] dark:text-[#D4AF37] font-bold font-mono">
+                            {percent.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-[#2D2D3D] rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#B8860B] rounded-full transition-all duration-500"
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                        <div className="text-[9px] text-gray-400 dark:text-gray-500 mt-1 font-bold flex justify-between items-center">
+                          <span>تم إنجاز {completedCount} من {course.lessonsCount || 0} دروس</span>
+                          <span>{percent === 100 ? "مكتمل 🌟" : "قيد الدراسة 📚"}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Footer price & lesson counter */}
+                    <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-[#2D2D3D] text-xs font-bold text-gray-500 dark:text-gray-400">
+                      <div className="flex items-center gap-1.5">
+                        <BookOpen className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                        <span>{course.lessonsCount || 0} درس</span>
+                      </div>
+                      
+                      <div className="text-base font-black text-[#00B4D8] dark:text-[#D4AF37]">
+                        {course.price === 0 ? 'مجاني' : `${course.price} ج.م`}
+                      </div>
                     </div>
                   </div>
                 </div>

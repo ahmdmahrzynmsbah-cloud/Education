@@ -95,12 +95,32 @@ export default function ExamPage() {
               if (userSnap.exists()) {
                 setUserData({ id: userSnap.id, ...userSnap.data() });
               }
+
+              // Check for existing submission if not a force-retake
+              const params = new URLSearchParams(window.location.search);
+              if (params.get("retake") !== "true") {
+                const subDoc = await getDoc(doc(db, "quiz_submissions", `${recheckUser.uid}_${examDoc.id}`));
+                if (subDoc.exists()) {
+                  setSubmissionResult(subDoc.data());
+                  setShowResults(true);
+                }
+              }
             }
           }, 1000);
         } else {
           const userSnap = await getDoc(doc(db, "users", currentUser.uid));
           if (userSnap.exists()) {
             setUserData({ id: userSnap.id, ...userSnap.data() });
+          }
+
+          // Check for existing submission if not a force-retake
+          const params = new URLSearchParams(window.location.search);
+          if (params.get("retake") !== "true") {
+            const subDoc = await getDoc(doc(db, "quiz_submissions", `${currentUser.uid}_${examDoc.id}`));
+            if (subDoc.exists()) {
+              setSubmissionResult(subDoc.data());
+              setShowResults(true);
+            }
           }
         }
       } catch (error) {
@@ -401,10 +421,22 @@ export default function ExamPage() {
                 </div>
               </div>
 
-              <div className="pt-6">
+              <div className="pt-6 flex flex-wrap justify-center gap-4">
+                <button
+                  onClick={() => {
+                    setSelectedAnswers({});
+                    setCurrentIdx(0);
+                    setShowResults(false);
+                    setSubmissionResult(null);
+                    setExamStarted(true);
+                  }}
+                  className="px-8 py-3.5 bg-emerald-500 hover:bg-emerald-650 text-white font-black rounded-2xl text-xs shadow-md transition-all hover:scale-[1.02] cursor-pointer"
+                >
+                  إعادة محاولة حل الاختبار 🔁
+                </button>
                 <button
                   onClick={() => navigate("/dashboard")}
-                  className="px-8 py-3.5 bg-gradient-to-l from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#AA7C11] text-white font-black rounded-2xl text-xs shadow-md transition-all hover:scale-[1.02]"
+                  className="px-8 py-3.5 bg-gradient-to-l from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#AA7C11] text-white font-black rounded-2xl text-xs shadow-md transition-all hover:scale-[1.02] cursor-pointer"
                 >
                   العودة للوحة قيادة الطالب 🏠
                 </button>

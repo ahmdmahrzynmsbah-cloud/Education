@@ -429,9 +429,11 @@ export default function ComprehensiveAnalytics({ userData, linkedStudent }: Comp
                           ? 'bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400' 
                           : user.role === 'parent' 
                             ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400' 
-                            : 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400'
+                            : user.role === 'admin'
+                              ? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400'
+                              : 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400'
                       }`}>
-                        {user.role === 'teacher' ? 'معلم معتمد' : user.role === 'parent' ? 'ولي أمر' : 'طالب'}
+                        {user.role === 'teacher' ? 'معلم معتمد' : user.role === 'parent' ? 'ولي أمر' : user.role === 'admin' ? 'مدير النظام' : 'طالب'}
                       </span>
                     </td>
                     <td className="p-4 font-mono text-gray-500 dark:text-gray-400">
@@ -916,7 +918,7 @@ export default function ComprehensiveAnalytics({ userData, linkedStudent }: Comp
               </div>
 
               {/* Right Side (Visual Report Card Document Preview) */}
-              <div className="flex-1 bg-white text-slate-900 border border-slate-200 rounded-2xl p-6 md:p-8 flex flex-col justify-between shadow-sm print:border-none print:shadow-none print:p-0">
+              <div className="flex-1 bg-white text-slate-900 border border-slate-200 rounded-2xl p-6 md:p-8 flex flex-col justify-between shadow-sm print:border-none print:shadow-none print:p-0 printable-area">
                 
                 {/* Header */}
                 <div className="space-y-6 pb-6 border-b border-slate-200">

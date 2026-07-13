@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Award, BookOpen, Check, CheckCircle2, Clock, Edit2, HelpCircle, List, 
@@ -20,6 +21,7 @@ interface QuizSectionProps {
 }
 
 export default function QuizSection({ courseId, lessonId, lessonTitle, userData, isTeacher }: QuizSectionProps) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [submission, setSubmission] = useState<QuizSubmission | null>(null);
@@ -855,8 +857,14 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
               </div>
 
               <button
-                onClick={handleStartQuiz}
-                className="bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] text-white px-8 py-3.5 rounded-2xl font-black text-sm shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:opacity-90 transition-all shrink-0 w-full sm:w-auto text-center"
+                onClick={() => {
+                  if (!quiz || quiz.questions.length === 0) {
+                    toast.error('لا توجد أسئلة مضافة في هذا الاختبار بعد');
+                    return;
+                  }
+                  navigate(`/exam/${quiz.id}?retake=true`);
+                }}
+                className="bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] text-white px-8 py-3.5 rounded-2xl font-black text-sm shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:opacity-90 transition-all shrink-0 w-full sm:w-auto text-center cursor-pointer"
               >
                 {submission ? 'إعادة محاولة الاختبار' : 'بدء الاختبار التفاعلي الآن'}
               </button>
@@ -876,7 +884,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                   <div>
                     <span className="text-[10px] text-gray-400 dark:text-gray-500 font-bold block">محاولتك الأخيرة المسجلة:</span>
                     <h4 className="font-black text-base text-gray-900 dark:text-white">
-                      درجتك: <span className="font-sans text-lg">{submission.score}%</span> - {submission.passed ? 'ناجح وTeachlandت!' : 'تحتاج لمراجعة الدرس'}
+                      درجتك: <span className="font-sans text-lg">{submission.score}%</span> - {submission.passed ? 'ناجح!' : 'تحتاج لمراجعة الدرس'}
                     </h4>
                     <p className="text-xs text-gray-400 dark:text-gray-500 font-sans mt-0.5">
                       التاريخ: {new Date(submission.submittedAt).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
@@ -885,8 +893,8 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                 </div>
 
                 <button
-                  onClick={() => setReviewMode(true)}
-                  className="bg-gray-100 dark:bg-[#2D2D3D] hover:bg-gray-200 dark:hover:bg-[#3d3d52] text-gray-700 dark:text-gray-300 text-xs font-black px-6 py-3 rounded-xl transition-all w-full md:w-auto text-center"
+                  onClick={() => navigate(`/exam/${quiz.id}`)}
+                  className="bg-gray-100 dark:bg-[#2D2D3D] hover:bg-gray-200 dark:hover:bg-[#3d3d52] text-gray-700 dark:text-gray-300 text-xs font-black px-6 py-3 rounded-xl transition-all w-full md:w-auto text-center cursor-pointer"
                 >
                   استعراض الأسئلة وشرح الإجابات
                 </button>

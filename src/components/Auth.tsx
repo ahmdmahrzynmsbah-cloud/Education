@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, Lock, User, Phone, MapPin, School, BookOpen, GraduationCap, Users, Calendar, IdCard, Mail } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
 const EGYPT_GOVERNORATES = [
@@ -118,13 +118,41 @@ export default function Auth() {
           if (formData.get('grade_5')) grades.push('الثاني الثانوي');
           if (formData.get('grade_6')) grades.push('الثالث الثانوي');
 
+          const finalGrades = grades.length > 0 ? grades : ['غير محدد'];
+          const teacherSubject = formData.get('subject') as string;
+          const teacherName = formData.get('name') as string;
+
           await setDoc(doc(db, 'users', user.uid), {
             ...baseData,
-            subject: formData.get('subject') as string,
+            subject: teacherSubject,
             nationalId: formData.get('nationalId') as string,
             dateOfBirth: formData.get('dateOfBirth') as string,
-            teachingGrades: grades.length > 0 ? grades : ['غير محدد']
+            teachingGrades: finalGrades
           });
+
+          // Send notifications to students who are in the teacher's teachingGrades
+          try {
+            const studentsQuery = query(
+              collection(db, 'users'),
+              where('role', '==', 'student'),
+              where('grade', 'in', finalGrades)
+            );
+            const studentsSnap = await getDocs(studentsQuery);
+            const notificationPromises = studentsSnap.docs.map(studentDoc => {
+              return addDoc(collection(db, 'notifications'), {
+                userId: studentDoc.id,
+                title: 'معلّم جديد انضم لتخصّصك! 👨‍🏫',
+                message: `انضم الأستاذ ${teacherName} لتدريس مادة ${teacherSubject} لصفك الدراسي. يمكنك الآن استكشاف كورساته ومحاضراته!`,
+                type: 'new_teacher_alert',
+                read: false,
+                createdAt: new Date().toISOString(),
+                teacherId: user.uid
+              });
+            });
+            await Promise.all(notificationPromises);
+          } catch (notifErr) {
+            console.error("Error creating notifications for new teacher:", notifErr);
+          }
         } else if (role === 'parent') {
           await setDoc(doc(db, 'users', user.uid), {
             ...baseData,

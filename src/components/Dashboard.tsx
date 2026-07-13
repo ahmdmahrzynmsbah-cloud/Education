@@ -24,6 +24,7 @@ import LuxuriousLoader from './LuxuriousLoader';
 import QuickNotes from './QuickNotes';
 import LiveClassroom from './LiveClassroom';
 import ComprehensiveAnalytics from './ComprehensiveAnalytics';
+import TeachersSearchList from './TeachersSearchList';
 
 const MOCK_TEACHER_STATS = [
   { id: 1, title: 'إجمالي الطلاب', value: '1,240', icon: Users, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
@@ -1197,6 +1198,28 @@ export default function Dashboard() {
                    border: '1px solid #D4AF37'
                  },
                });
+            } else if (data.type === "new_teacher_alert") {
+               toast.success(`${data.title}\n${data.message}`, {
+                 icon: '👨‍🏫',
+                 duration: 8000,
+                 style: {
+                   borderRadius: '16px',
+                   background: '#1A1A24',
+                   color: '#fff',
+                   border: '1px solid #00B4D8'
+                 },
+               });
+            } else if (data.type === "new_course_alert") {
+               toast.success(`${data.title}\n${data.message}`, {
+                 icon: '📚',
+                 duration: 8000,
+                 style: {
+                   borderRadius: '16px',
+                   background: '#1A1A24',
+                   color: '#fff',
+                   border: '1px solid #D4AF37'
+                 },
+               });
             }
           }
         });
@@ -1261,6 +1284,7 @@ export default function Dashboard() {
           ] : [
             { id: 'home', label: 'الرئيسية', icon: Target },
             { id: 'subjects', label: 'موادي', icon: BookOpen },
+            { id: 'teachers_list', label: 'المعلمون', icon: Users },
             { id: 'quizzes', label: 'الاختبارات', icon: Award },
             { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
             { id: 'live', label: 'حصص لايف', icon: Video },
@@ -1741,6 +1765,17 @@ export default function Dashboard() {
                 exit={{ opacity: 0, y: -10 }}
               >
                 <StudentCourses userData={userData} />
+              </motion.div>
+            )}
+
+            {activeTab === 'teachers_list' && userData?.role === 'student' && (
+              <motion.div
+                key="teachers_list"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <TeachersSearchList userData={userData} />
               </motion.div>
             )}
 
@@ -3042,7 +3077,7 @@ export default function Dashboard() {
         ] : [
             { id: 'home', icon: Target, label: 'الرئيسية' },
             { id: 'subjects', icon: BookOpen, label: 'موادي' },
-            { id: 'live', icon: Video, label: 'لايف' },
+            { id: 'teachers_list', icon: Users, label: 'المعلمون' },
             { id: 'quizzes', icon: Award, label: 'الاختبارات' },
             { id: 'profile', icon: UserIcon, label: 'حسابي' },
         ]).map(item => (

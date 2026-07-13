@@ -111,6 +111,30 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
       const docRef = await addDoc(collection(db, 'courses'), newCourseData);
       setCourses([...courses, { id: docRef.id, ...newCourseData } as Course]);
       
+      // Dispatch notifications to students of this grade
+      try {
+        const studentsQuery = query(
+          collection(db, 'users'),
+          where('role', '==', 'student'),
+          where('grade', '==', grade)
+        );
+        const studentsSnap = await getDocs(studentsQuery);
+        const notificationPromises = studentsSnap.docs.map(studentDoc => {
+          return addDoc(collection(db, 'notifications'), {
+            userId: studentDoc.id,
+            title: 'كورس جديد متاح لصفك الدراسي! 📚',
+            message: `قام الأستاذ ${userData.name} بنشر كورس جديد بعنوان "${title}" في مادة ${userData.subject || 'مادته الدراسية'}.`,
+            type: 'new_course_alert',
+            read: false,
+            createdAt: new Date().toISOString(),
+            courseId: docRef.id
+          });
+        });
+        await Promise.all(notificationPromises);
+      } catch (notifErr) {
+        console.error("Error creating notifications for new course:", notifErr);
+      }
+      
       resetForm();
       toast.success('تم إنشاء الكورس بنجاح!');
     } catch (error) {
@@ -208,29 +232,35 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.3, delay: index * 0.05 }}
-              className={`bg-white dark:bg-[#1A1A24] rounded-2xl overflow-hidden shadow-sm border border-gray-200 dark:border-[#2D2D3D] group hover:shadow-md transition-all flex flex-col relative h-full ${course.isActive === false ? 'opacity-60 grayscale-[50%]' : ''}`}
+              className={`bg-white dark:bg-[#1A1A24] rounded-3xl overflow-hidden shadow-sm hover:shadow-xl border border-gray-150 dark:border-[#2D2D3D] group transition-all duration-300 flex flex-col relative h-full hover:-translate-y-1 ${course.isActive === false ? 'opacity-70 grayscale-[30%]' : ''}`}
             >
               <Link to={`/course/${course.id}`} className="absolute inset-0 z-0"></Link>
-              <div className="h-48 relative overflow-hidden bg-gray-100 dark:bg-[#222230] pointer-events-none">
+              
+              {/* Image Container with strict 16:10 Aspect Ratio */}
+              <div className="aspect-[16/10] w-full relative overflow-hidden bg-gray-50 dark:bg-[#15151F] pointer-events-none">
                 {course.imageUrl ? (
-                  <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => {
-                    (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=800&auto=format&fit=crop';
-                  }} />
+                  <img 
+                    src={course.imageUrl} 
+                    alt={course.title} 
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=800&auto=format&fit=crop';
+                    }} 
+                  />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
-                    <ImageIcon2 className="w-12 h-12 text-gray-300 dark:text-gray-600" />
+                    <BookOpen className="w-12 h-12 text-gray-300 dark:text-gray-700 stroke-[1.5]" />
                   </div>
                 )}
+                
                 {/* Grade Badge on the top right */}
-                <div className="absolute top-4 right-4 z-10">
-                  <div className="bg-white/90 dark:bg-black/80 backdrop-blur-sm px-3 py-1 rounded-full text-sm font-bold text-[#00B4D8] dark:text-[#D4AF37] shadow-sm">
-                    {course.grade}
-                  </div>
+                <div className="absolute top-4 right-4 bg-white/95 dark:bg-black/80 backdrop-blur-md px-3 py-1 rounded-xl text-xs font-black text-[#00B4D8] dark:text-[#D4AF37] shadow-sm">
+                  {course.grade}
                 </div>
 
                 {/* Status Indicator Badge on the top left */}
-                <div className="absolute top-4 left-4 z-10">
-                  <div className={`backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold text-white shadow-sm flex items-center gap-1.5 ${
+                <div className="absolute top-4 left-4">
+                  <div className={`backdrop-blur-md px-3 py-1 rounded-xl text-[10px] font-black text-white shadow-sm flex items-center gap-1.5 ${
                     course.status === 'published' || course.isActive === true ? 'bg-green-500/90' :
                     course.status === 'under_review' ? 'bg-yellow-500/90' :
                     'bg-gray-500/90'
@@ -242,35 +272,61 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
                   </div>
                 </div>
               </div>
-              <div className="p-6 flex-1 flex flex-col pointer-events-none">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{course.title}</h3>
-                <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 line-clamp-2 leading-relaxed flex-1">{course.description}</p>
-                
-                <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-300 font-medium pt-4 border-t border-gray-100 dark:border-[#2D2D3D] mb-4">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-gray-400" />
-                    <span>{course.enrolledStudents} طالب</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-gray-400" />
-                    <span>{course.lessonsCount} درس</span>
-                  </div>
+
+              {/* Content Container */}
+              <div className="p-5 flex-1 flex flex-col justify-between pointer-events-none">
+                <div>
+                  {/* Title */}
+                  <h3 className="text-lg font-black text-gray-950 dark:text-white mb-2 group-hover:text-[#00B4D8] dark:group-hover:text-[#D4AF37] transition-colors line-clamp-1">
+                    {course.title}
+                  </h3>
+
+                  {/* Description */}
+                  <p className="text-gray-500 dark:text-gray-400 text-xs mb-4 line-clamp-2 leading-relaxed">
+                    {course.description}
+                  </p>
                 </div>
-              </div>
-              <div className="px-6 pb-6 flex items-center justify-between mt-auto relative z-10">
-                <span className="text-2xl font-black text-[#00B4D8] dark:text-[#D4AF37] pointer-events-none">
-                  {course.price === 0 ? 'مجاني' : `${course.price} ج.م`}
-                </span>
-                <div className="flex gap-2">
-                  <button onClick={(e) => { e.preventDefault(); handleToggleCourseStatus(course.id, course.isActive); }} title={course.isActive === false ? 'تفعيل الكورس' : 'إلغاء التفعيل'} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${course.isActive === false ? 'bg-orange-100 text-orange-600 hover:bg-orange-200' : 'bg-green-100 text-green-600 hover:bg-green-200'}`}>
-                    {course.isActive === false ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                  <button onClick={(e) => { e.preventDefault(); toast('سيتم إضافة هذه الميزة قريباً', { icon: '⚙️' }); }} className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-[#222230] flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] transition-colors">
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button onClick={(e) => { e.preventDefault(); handleDeleteCourse(course.id); }} className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-[#222230] flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-red-500 transition-colors">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+
+                <div>
+                  {/* Meta Details */}
+                  <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 font-bold mb-4 pt-3 border-t border-gray-100 dark:border-[#2D2D3D]">
+                    <div className="flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-gray-450 dark:text-gray-500" />
+                      <span>{course.enrolledStudents || 0} طالب</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-gray-450 dark:text-gray-500" />
+                      <span>{course.lessonsCount || 0} درس</span>
+                    </div>
+                  </div>
+
+                  {/* Price & Actions Footer */}
+                  <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-[#2D2D3D] relative z-10 pointer-events-auto">
+                    <span className="text-base font-black text-[#00B4D8] dark:text-[#D4AF37]">
+                      {course.price === 0 ? 'مجاني' : `${course.price} ج.م`}
+                    </span>
+                    <div className="flex gap-1.5">
+                      <button 
+                        onClick={(e) => { e.preventDefault(); handleToggleCourseStatus(course.id, course.isActive); }} 
+                        title={course.isActive === false ? 'تفعيل الكورس' : 'إلغاء التفعيل'} 
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${course.isActive === false ? 'bg-orange-50 text-orange-600 hover:bg-orange-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}
+                      >
+                        {course.isActive === false ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                      <button 
+                        onClick={(e) => { e.preventDefault(); toast('سيتم إضافة هذه الميزة قريباً', { icon: '⚙️' }); }} 
+                        className="w-8 h-8 rounded-lg bg-gray-50 dark:bg-[#222230] flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] transition-all"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.preventDefault(); handleDeleteCourse(course.id); }} 
+                        className="w-8 h-8 rounded-lg bg-gray-50 dark:bg-[#222230] flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-red-500 transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </motion.div>

@@ -2,13 +2,14 @@ import React from "react";
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Lock, ArrowRight, Plus, Trash2, Video, BookOpen, Clock, Edit2, X, Upload, Star, AlertTriangle, FileText, Save, Check, Loader2, History, Award, Calendar, Download } from 'lucide-react';
+import { Play, Lock, ArrowRight, Plus, Trash2, Video, BookOpen, Clock, Edit2, X, Upload, Star, AlertTriangle, FileText, Save, Check, Loader2, History, Award, Calendar, Download, Sparkles, Heart, ThumbsUp, MessageSquare, Reply, Send, ShieldAlert } from 'lucide-react';
 import { doc, getDoc, updateDoc, arrayUnion, increment, collection, query, where, getDocs, setDoc, addDoc, deleteDoc, orderBy } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { User, Course, Lesson, Review, LessonNote } from '../types';
 import ThemeToggle from './ThemeToggle';
 import { uploadChunkedFile } from '../lib/upload';
 import { toast, Toaster } from 'react-hot-toast';
+import confetti from 'canvas-confetti';
 import QuizSection from './QuizSection';
 import PomodoroTimer from './PomodoroTimer';
 import LuxuriousLoader from './LuxuriousLoader';
@@ -66,6 +67,22 @@ export default function CourseDetails() {
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [lessonToDelete, setLessonToDelete] = useState<string | null>(null);
+
+  // Completion Rating Modal States
+  const [showCompletionRating, setShowCompletionRating] = useState(false);
+  const [teacherRating, setTeacherRating] = useState(5);
+  const [contentRating, setContentRating] = useState(5);
+  const [completionComment, setCompletionComment] = useState("");
+  const [isCompletionReviewPrivate, setIsCompletionReviewPrivate] = useState(false);
+  const [isSubmittingCompletionReview, setIsSubmittingCompletionReview] = useState(false);
+
+  // Course Likes & Reactions States
+  const [isLiked, setIsLiked] = useState(false);
+  const [courseLikesCount, setCourseLikesCount] = useState(0);
+  const [likeParticles, setLikeParticles] = useState<{ id: number; x: number; y: number; scale: number; rotation: number; emoji: string }[]>([]);
+  const [activeReplyInput, setActiveReplyInput] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [isSubmittingReply, setIsSubmittingReply] = useState<Record<string, boolean>>({});
 
   // Notes state
   const [lessonTab, setLessonTab] = useState<'info' | 'quiz' | 'notes' | 'pomodoro'>('info');
@@ -225,6 +242,11 @@ export default function CourseDetails() {
             const cData = courseDoc.data();
             courseTeacherId = cData.teacherId || "";
             setCourse({ id: courseDoc.id, ...cData } as Course);
+            setCourseLikesCount(cData.likesCount || 0);
+            if (user) {
+              const likeDoc = await getDoc(doc(db, 'course_likes', `${user.uid}_${id}`));
+              setIsLiked(likeDoc.exists());
+            }
           } else {
             navigate('/dashboard');
             return;
@@ -414,6 +436,179 @@ export default function CourseDetails() {
     }
   };
 
+  const handleSubmitCompletionRating = async () => {
+    if (!userData || !course) return;
+    setIsSubmittingCompletionReview(true);
+    try {
+      const existingReview = reviews.find(r => r.userId === userData.id);
+      const averageRating = Math.round((teacherRating + contentRating) / 2);
+      const newReviewData = {
+        courseId: course.id,
+        userId: userData.id,
+        userName: userData.name,
+        rating: averageRating,
+        teacherRating,
+        contentRating,
+        comment: completionComment.trim() || "تم إكمال الكورس بنجاح وتقييمه!",
+        isPrivate: isCompletionReviewPrivate,
+        createdAt: new Date().toISOString()
+      };
+
+      if (existingReview) {
+        await setDoc(doc(db, "reviews", existingReview.id), newReviewData, { merge: true });
+        setReviews(prev => prev.map(r => r.id === existingReview.id ? { ...r, ...newReviewData } : r));
+        toast.success("تم تحديث تقييمك للأستاذ والمحتوى بنجاح! 🌟");
+      } else {
+        const docRef = await addDoc(collection(db, "reviews"), newReviewData);
+        setReviews(prev => [{ id: docRef.id, ...newReviewData }, ...prev]);
+        toast.success("شكراً لك! تم إرسال تقييمك للأستاذ بنجاح! 🌟");
+      }
+
+      setShowCompletionRating(false);
+    } catch (error) {
+      console.error("Error submitting completion rating:", error);
+      toast.error("حدث خطأ أثناء إرسال التقييم");
+    } finally {
+      setIsSubmittingCompletionReview(false);
+    }
+  };
+
+  const handleToggleCourseLike = async () => {
+    if (!userData || !course || !id) {
+      toast.error("يرجى تسجيل الدخول أولاً");
+      return;
+    }
+
+    const newLikedState = !isLiked;
+    setIsLiked(newLikedState);
+    const updatedCount = newLikedState ? courseLikesCount + 1 : Math.max(0, courseLikesCount - 1);
+    setCourseLikesCount(updatedCount);
+
+    if (newLikedState) {
+      const emojis = ["❤️", "💖", "👍", "✨", "🔥", "🌟"];
+      const newParticles = Array.from({ length: 15 }).map((_, i) => ({
+        id: Date.now() + i,
+        x: (Math.random() - 0.5) * 160,
+        y: -30 - Math.random() * 120,
+        scale: 0.6 + Math.random() * 1.0,
+        rotation: (Math.random() - 0.5) * 60,
+        emoji: emojis[Math.floor(Math.random() * emojis.length)]
+      }));
+      setLikeParticles(newParticles);
+      setTimeout(() => {
+        setLikeParticles([]);
+      }, 1500);
+    }
+
+    try {
+      const likeDocRef = doc(db, 'course_likes', `${userData.id}_${id}`);
+      const courseDocRef = doc(db, 'courses', id);
+
+      if (newLikedState) {
+        await setDoc(likeDocRef, {
+          userId: userData.id,
+          courseId: id,
+          createdAt: new Date().toISOString()
+        });
+        await updateDoc(courseDocRef, {
+          likesCount: increment(1)
+        });
+        toast.success("تم تسجيل إعجابك بالكورس! ❤️", { id: "like-toast" });
+      } else {
+        await deleteDoc(likeDocRef);
+        await updateDoc(courseDocRef, {
+          likesCount: increment(-1)
+        });
+        toast("تم إلغاء الإعجاب", { id: "like-toast" });
+      }
+    } catch (error) {
+      console.error("Error updating course like:", error);
+    }
+  };
+
+  const handleToggleReviewLike = async (reviewId: string) => {
+    if (!userData) {
+      toast.error("يرجى تسجيل الدخول أولاً لإبداء الإعجاب بالتعليق");
+      return;
+    }
+
+    const updatedReviews = reviews.map(r => {
+      if (r.id === reviewId) {
+        const likedIds = r.likedUserIds || [];
+        const isCurrentlyLiked = likedIds.includes(userData.id);
+        const newLikedIds = isCurrentlyLiked 
+          ? likedIds.filter(uid => uid !== userData.id)
+          : [...likedIds, userData.id];
+        return {
+          ...r,
+          likedUserIds: newLikedIds,
+          likesCount: newLikedIds.length
+        };
+      }
+      return r;
+    });
+    setReviews(updatedReviews);
+
+    try {
+      const reviewDocRef = doc(db, 'reviews', reviewId);
+      const targetReview = reviews.find(r => r.id === reviewId);
+      if (!targetReview) return;
+
+      const likedIds = targetReview.likedUserIds || [];
+      const isCurrentlyLiked = likedIds.includes(userData.id);
+      const newLikedIds = isCurrentlyLiked 
+        ? likedIds.filter(uid => uid !== userData.id)
+        : [...likedIds, userData.id];
+
+      await updateDoc(reviewDocRef, {
+        likedUserIds: newLikedIds,
+        likesCount: newLikedIds.length
+      });
+    } catch (error) {
+      console.error("Error toggling review like:", error);
+    }
+  };
+
+  const handleSubmitReply = async (reviewId: string) => {
+    if (!userData || !replyText.trim()) return;
+
+    setIsSubmittingReply(prev => ({ ...prev, [reviewId]: true }));
+    const newReply = {
+      id: `${userData.id}_${Date.now()}`,
+      userId: userData.id,
+      userName: userData.name,
+      userRole: userData.role === 'teacher' ? 'teacher' : userData.role === 'admin' ? 'admin' : 'student',
+      comment: replyText.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      const reviewDocRef = doc(db, 'reviews', reviewId);
+      await updateDoc(reviewDocRef, {
+        replies: arrayUnion(newReply)
+      });
+
+      const updatedReviews = reviews.map(r => {
+        if (r.id === reviewId) {
+          return {
+            ...r,
+            replies: [...(r.replies || []), newReply]
+          };
+        }
+        return r;
+      });
+      setReviews(updatedReviews);
+      setReplyText("");
+      setActiveReplyInput(null);
+      toast.success("تمت إضافة ردك بنجاح! 💬");
+    } catch (error) {
+      console.error("Error adding reply:", error);
+      toast.error("فشل إرسال الرد");
+    } finally {
+      setIsSubmittingReply(prev => ({ ...prev, [reviewId]: false }));
+    }
+  };
+
   // Set initial video playback position when active lesson changes
   useEffect(() => {
     if (activeLesson && lessonProgressMap[activeLesson.id]) {
@@ -587,6 +782,24 @@ export default function CourseDetails() {
 
       if (!isCompleted) {
         toast.success("أحسنت! تم إكمال الدرس بنجاح 🌟");
+        if (updated.length === lessonsCount) {
+          try {
+            confetti({
+              particleCount: 200,
+              spread: 80,
+              origin: { y: 0.6 }
+            });
+          } catch (e) {}
+
+          const alreadyRated = reviews.some(r => r.userId === userData.id);
+          if (!alreadyRated) {
+            setTeacherRating(5);
+            setContentRating(5);
+            setCompletionComment("");
+            setIsCompletionReviewPrivate(false);
+            setShowCompletionRating(true);
+          }
+        }
       } else {
         toast.success("تم إلغاء تحديد إكمال الدرس");
       }
@@ -655,699 +868,1047 @@ export default function CourseDetails() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Video Player & Info */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-black rounded-2xl overflow-hidden aspect-video relative shadow-lg">
-            {!canWatch ? (
-              <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 bg-gray-900 p-8 text-center">
-                <Lock className="w-16 h-16 mb-4 opacity-50 text-[#00B4D8] dark:text-[#D4AF37]" />
-                <h2 className="text-2xl font-black text-white mb-2">هذا الكورس مغلق</h2>
-                <p className="font-medium text-lg mb-6">يجب عليك التسجيل في الكورس لتتمكن من مشاهدة الدروس</p>
-                <button 
-                  onClick={handleEnroll}
-                  disabled={enrolling}
-                  className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-8 py-3 rounded-xl font-bold text-lg hover:bg-[#0077B6] dark:hover:bg-[#B8860B] transition-colors disabled:opacity-50"
-                >
-                  {enrolling ? 'جاري التسجيل...' : 'اشترك الآن مجاناً'}
-                </button>
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+        {/* Course Completion & Rating Notification Banner */}
+        {userData?.role === 'student' && lessons.length > 0 && completedLessons.length === lessons.length && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-r from-amber-500/10 via-yellow-500/15 to-amber-500/10 border-2 border-yellow-400/30 rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm"
+          >
+            {/* Background sparkle effects */}
+            <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none text-5xl">🎉</div>
+            <div className="absolute bottom-0 left-0 p-8 opacity-10 pointer-events-none text-5xl">✨</div>
+            
+            <div className="flex items-center gap-4 text-right">
+              <div className="w-14 h-14 bg-gradient-to-tr from-yellow-400 to-amber-500 text-white rounded-2xl flex items-center justify-center text-3xl shadow-md shrink-0">
+                🏆
               </div>
-            ) : activeLesson ? (
-              activeLesson.videoUrl.includes('youtube.com') || activeLesson.videoUrl.includes('youtu.be') ? (
-                <iframe 
-                  src={getEmbedUrl(activeLesson.videoUrl)} 
-                  title={activeLesson.title}
-                  className="w-full h-full absolute inset-0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              ) : (
-                <video src={activeLesson.videoUrl} 
-                  key={activeLesson.videoUrl}
-                  controls
-                  preload="auto"
-                  playsInline
-                  className="w-full h-full absolute inset-0 bg-black"
-                  onLoadedMetadata={(e) => {
-                    if (initialVideoTime > 0) {
-                      e.currentTarget.currentTime = initialVideoTime;
-                    }
-                  }}
-                  onTimeUpdate={handleVideoTimeUpdate}
-                  onPause={handleVideoPause}
-                  onEnded={handleVideoEnded}
-                >
-                   
-                  Your browser does not support the video tag.
-                </video>
-              )
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 bg-gray-900">
-                <Video className="w-16 h-16 mb-4 opacity-50" />
-                <p className="font-medium text-lg">اختر درساً للبدء</p>
+              <div className="space-y-1">
+                <h3 className="font-black text-lg text-gray-950 dark:text-white">ألف مبروك! لقد أتممت هذا الكورس بنجاح وبدرجة ١٠٠٪ 🎉</h3>
+                <p className="text-xs font-bold text-gray-600 dark:text-gray-400 max-w-2xl leading-relaxed">
+                  رأيك يهمنا ويسهم في تحسين جودة التعليم! شاركنا تقييمك لأداء الأستاذ <span className="text-amber-500 font-extrabold">{course.teacherName}</span> ومحتوى الكورس التعليمي لمساعدة الطلاب الآخرين.
+                </p>
               </div>
-            )}
-          </div>
-
-          {activeLesson && (
-            <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-[#2D2D3D] space-y-6">
-              {/* Tabs header inside the card */}
-              <div className="flex border-b border-gray-100 dark:border-[#2D2D3D] pb-3 justify-between items-center">
-                <div className="flex gap-4">
-                  <button
-                    onClick={() => setLessonTab('info')}
-                    className={`pb-2 px-1 text-sm font-black transition-all relative ${
-                      lessonTab === 'info'
-                        ? 'text-[#00B4D8] dark:text-[#D4AF37]'
-                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    وصف الدرس
-                    {lessonTab === 'info' && (
-                      <motion.div layoutId="activeLessonTabLine" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
-                    )}
-                  </button>
-
-                  <button
-                    onClick={() => setLessonTab('quiz')}
-                    className={`pb-2 px-1 text-sm font-black transition-all relative flex items-center gap-1.5 ${
-                      lessonTab === 'quiz'
-                        ? 'text-[#00B4D8] dark:text-[#D4AF37]'
-                        : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
-                    }`}
-                  >
-                    <Award className="w-4 h-4" />
-                    الاختبار التفاعلي
-                    {lessonTab === 'quiz' && (
-                      <motion.div layoutId="activeLessonTabLine" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
-                    )}
-                  </button>
-                  
-                  {userData?.role === 'student' && (
-                    <button
-                      onClick={() => setLessonTab('notes')}
-                      className={`pb-2 px-1 text-sm font-black transition-all relative flex items-center gap-2 ${
-                        lessonTab === 'notes'
-                          ? 'text-[#00B4D8] dark:text-[#D4AF37]'
-                          : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
-                      }`}
-                    >
-                      <FileText className="w-4 h-4" />
-                      ملاحظاتي الشخصية
-                      {lessonTab === 'notes' && (
-                        <motion.div layoutId="activeLessonTabLine" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
-                      )}
-                    </button>
-                  )}
-                  
-                  {userData?.role === 'student' && (
-                    <button
-                      onClick={() => setLessonTab('pomodoro')}
-                      className={`pb-2 px-1 text-sm font-black transition-all relative flex items-center gap-1.5 ${
-                        lessonTab === 'pomodoro'
-                          ? 'text-[#00B4D8] dark:text-[#D4AF37]'
-                          : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
-                      }`}
-                    >
-                      <Clock className="w-4 h-4" />
-                      تنظيم الوقت (بومودورو)
-                      {lessonTab === 'pomodoro' && (
-                        <motion.div layoutId="activeLessonTabLine" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
-                      )}
-                    </button>
-                  )}
-                </div>
-                
-                {lessonTab === 'notes' && (
-                  <div className="flex items-center gap-2 font-sans">
-                    {saveStatus === 'saving' && (
-                      <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1.5 font-bold">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#00B4D8] dark:text-[#D4AF37]" />
-                        جاري الحفظ تلقائياً...
-                      </span>
-                    )}
-                    {saveStatus === 'saved' && (
-                      <span className="text-xs text-green-500 dark:text-green-400 flex items-center gap-1.5 font-bold">
-                        <Check className="w-3.5 h-3.5" />
-                        تم حفظ التغييرات
-                      </span>
-                    )}
-                    {saveStatus === 'error' && (
-                      <span className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1.5 font-bold">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        خطأ في حفظ التغييرات
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <AnimatePresence mode="wait">
-                {lessonTab === 'info' && (
-                  <motion.div
-                    key="info"
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -5 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">{activeLesson.title}</h2>
-                    <p className="text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-wrap mb-6">{activeLesson.description || 'لا يوجد وصف لهذا الدرس.'}</p>
-                    
-                    {userData?.role === 'student' && (
-                      <div className="pt-5 border-t border-gray-100 dark:border-[#2D2D3D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm font-black text-gray-900 dark:text-white">إكمال الدرس الحالي</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">حدد هذا الدرس كمكتمل لتحديث نسبة تقدمك العامة في هذا الكورس</span>
-                        </div>
-                        <button
-                          onClick={() => handleToggleLessonComplete(activeLesson.id)}
-                          className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
-                            completedLessons.includes(activeLesson.id)
-                              ? 'bg-green-500 text-white shadow-md shadow-green-500/20 hover:bg-green-600'
-                              : 'bg-gray-100 hover:bg-gray-200 dark:bg-[#222230] dark:hover:bg-[#2D2D3D] text-gray-800 dark:text-gray-200'
-                          }`}
-                        >
-                          <Check className={`w-4 h-4 ${completedLessons.includes(activeLesson.id) ? 'stroke-[3px]' : ''}`} />
-                          {completedLessons.includes(activeLesson.id) ? 'تم إكمال الدرس ✓' : 'تحديد كمكتمل'}
-                        </button>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-
-                {lessonTab === 'quiz' && userData && (
-                  <motion.div
-                    key="quiz"
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -5 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <QuizSection
-                      courseId={id || ''}
-                      lessonId={activeLesson.id}
-                      lessonTitle={activeLesson.title}
-                      userData={userData}
-                      isTeacher={userData.role === 'teacher'}
-                    />
-                  </motion.div>
-                )}
-
-                {lessonTab === 'notes' && (
-                  <motion.div
-                    key="notes"
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -5 }}
-                    transition={{ duration: 0.15 }}
-                    className="space-y-4"
-                  >
-                    {/* Notes Tabs */}
-                    <div className="flex gap-2 bg-gray-50 dark:bg-[#0D0D12] p-1 rounded-xl w-fit">
-                      <button
-                        type="button"
-                        onClick={() => setNotesTab('current')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                          notesTab === 'current'
-                            ? 'bg-white dark:bg-[#1A1A24] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm'
-                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-                        }`}
-                      >
-                        ملاحظات هذا الدرس
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNotesTab('all')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                          notesTab === 'all'
-                            ? 'bg-white dark:bg-[#1A1A24] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm'
-                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-                        }`}
-                      >
-                        <History className="w-3.5 h-3.5" />
-                        مراجعة كل الملاحظات ({allNotes.length})
-                      </button>
-                    </div>
-
-                    {notesTab === 'current' ? (
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-xs text-gray-400 dark:text-gray-500 font-bold">
-                            اكتب ملاحظاتك المهمة هنا لمراجعتها وتسهيل المذاكرة لاحقاً:
-                          </span>
-                          
-                          {/* Formatting Helpers */}
-                          <div className="flex gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => insertText('💡 فكرة مهمة: ')}
-                              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30 dark:hover:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-xs rounded-xl font-bold transition-colors"
-                              title="إضافة فكرة مهمة"
-                            >
-                              💡 فكرة
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => insertText('❓ سؤال للمراجعة: ')}
-                              className="px-2.5 py-1.5 bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-950/30 dark:hover:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400 text-xs rounded-xl font-bold transition-colors"
-                              title="إضافة سؤال مراجعة"
-                            >
-                              ❓ سؤال
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => insertText('📝 ملخص: ')}
-                              className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/30 dark:hover:bg-purple-900/40 text-purple-600 dark:text-purple-400 text-xs rounded-xl font-bold transition-colors"
-                              title="إضافة ملخص"
-                            >
-                              📝 ملخص
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const video = document.querySelector('video');
-                                if (video) {
-                                  const mins = Math.floor(video.currentTime / 60).toString().padStart(2, '0');
-                                  const secs = Math.floor(video.currentTime % 60).toString().padStart(2, '0');
-                                  insertText(`🕒 عند الدقيقة [${mins}:${secs}]: `);
-                                } else {
-                                  insertText('🕒 نقطة زمنية: ');
-                                }
-                              }}
-                              className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 text-xs rounded-xl font-bold transition-colors"
-                              title="إضافة نقطة زمنية للفيديو"
-                            >
-                              🕒 ختم زمني
-                            </button>
-                          </div>
-                        </div>
-
-                        <textarea
-                          value={noteContent}
-                          onChange={(e) => setNoteContent(e.target.value)}
-                          placeholder="مثال: القوانين الذهبية للباب الأول وكيفية حل المسائل المعقدة..."
-                          className="w-full min-h-[180px] bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] transition-colors resize-y leading-relaxed font-medium text-right"
-                          dir="rtl"
-                        />
-
-                        <div className="flex justify-between items-center">
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(noteContent);
-                                toast.success('تم نسخ الملاحظات إلى الحافظة! 📋');
-                              }}
-                              disabled={!noteContent}
-                              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-[#2D2D3D] dark:hover:bg-[#3d3d52] disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 dark:text-gray-300 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
-                            >
-                              نسخ الملاحظة
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm('هل أنت متأكد من رغبتك في مسح ملاحظات هذا الدرس؟')) {
-                                  setNoteContent('');
-                                }
-                              }}
-                              disabled={!noteContent}
-                              className="px-4 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-xs font-bold transition-colors"
-                            >
-                              مسح النص
-                            </button>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={handleSaveNote}
-                            disabled={isSavingNote}
-                            className="bg-[#00B4D8] dark:bg-[#D4AF37] hover:bg-[#0077B6] dark:hover:bg-[#B8860B] disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-md shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 flex items-center gap-1.5 transition-all"
-                          >
-                            {isSavingNote ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Save className="w-3.5 h-3.5" />
-                            )}
-                            حفظ الآن
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-4 max-h-[350px] overflow-y-auto pr-1">
-                        {allNotes.length === 0 ? (
-                          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                            <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                            <p className="font-medium text-sm">لم تقم بكتابة أي ملاحظات في هذا الكورس بعد.</p>
-                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">ابدأ بمشاهدة الدروس وتدوين أفكارك!</p>
-                          </div>
-                        ) : (
-                          allNotes.map((note) => (
-                            <div key={note.id} className="p-4 rounded-xl bg-gray-50 dark:bg-[#222230] border border-gray-100 dark:border-[#2D2D3D] space-y-2 text-right relative group">
-                              <div className="flex justify-between items-center border-b border-gray-200/50 dark:border-gray-800 pb-2">
-                                <span className="font-black text-sm text-gray-900 dark:text-white flex items-center gap-1.5">
-                                  <span className="w-2 h-2 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-full"></span>
-                                  {note.lessonTitle}
-                                </span>
-                                <span className="text-[10px] text-gray-400 dark:text-gray-500 font-bold">
-                                  تحديث: {new Date(note.updatedAt).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-wrap font-medium">
-                                {note.content}
-                              </p>
-                              <div className="flex justify-end gap-2 pt-2">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const targetLesson = lessons.find(l => l.id === note.lessonId);
-                                    if (targetLesson) {
-                                      setActiveLesson(targetLesson);
-                                      setNotesTab('current');
-                                      toast.success(`تم الانتقال لدرس: ${targetLesson.title}`);
-                                    } else {
-                                      toast.error('لم نتمكن من العثور على هذا الدرس');
-                                    }
-                                  }}
-                                  className="text-[10px] text-[#00B4D8] dark:text-[#D4AF37] hover:underline font-black"
-                                >
-                                  الانتقال للدرس وتعديل الملاحظة ←
-                                </button>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-
-                {lessonTab === 'pomodoro' && userData && (
-                  <motion.div
-                    key="pomodoro"
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -5 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <PomodoroTimer
-                      courseId={id || ''}
-                      courseTitle={course?.title || ''}
-                      lessonId={activeLesson?.id}
-                      lessonTitle={activeLesson?.title}
-                      userData={userData}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
-          )}
+
+            <button
+              onClick={() => {
+                const existingReview = reviews.find(r => r.userId === userData.id);
+                setTeacherRating(existingReview?.teacherRating || 5);
+                setContentRating(existingReview?.contentRating || 5);
+                setCompletionComment(existingReview?.comment || "");
+                setIsCompletionReviewPrivate(existingReview?.isPrivate || false);
+                setShowCompletionRating(true);
+              }}
+              className="px-6 py-3 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-600 hover:to-amber-600 text-white font-black text-xs rounded-xl shadow-md transition-all shrink-0 cursor-pointer flex items-center gap-2"
+            >
+              <Sparkles className="w-4 h-4 fill-white" />
+              {reviews.some(r => r.userId === userData.id) ? "تعديل تقييمك الحالي" : "تقييم الأستاذ والمحتوى الآن"}
+            </button>
+          </motion.div>
+        )}
+
+        {/* ROW 1: Symmetrical Video Player & Playlist Sidebar (Equal Height on Desktop!) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
           
-          {!activeLesson && (
-            <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-[#2D2D3D]">
-              <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">عن الكورس</h2>
-              <p className="text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{course.description}</p>
-            </div>
-          )}
-
-          {/* Reviews Section */}
-          <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-[#2D2D3D] mt-6">
-            <h2 className="text-xl font-black text-gray-900 dark:text-white mb-6">التقييمات والآراء</h2>
-            {userData?.role === "student" && canWatch && (
-              <form onSubmit={handleSubmitReview} className="mb-8 bg-gray-50 dark:bg-[#222230] p-4 rounded-xl border border-gray-100 dark:border-[#2D2D3D] space-y-4">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white">أضف تقييمك لجودة المحتوى التعليمي</h3>
-                <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button key={star} type="button" onClick={() => setRating(star)} className="focus:outline-none transition-transform hover:scale-110">
-                      <Star className={`w-6 h-6 ${star <= rating ? "fill-[#F5A623] text-[#F5A623]" : "text-gray-300 dark:text-gray-600"}`} />
-                    </button>
-                  ))}
-                </div>
-                <textarea required value={comment} onChange={(e) => setComment(e.target.value)} placeholder="شاركنا رأيك ومقترحاتك للأستاذ لتطوير المحتوى التعليمي..." className="w-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] rounded-xl p-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] resize-none" rows={3}></textarea>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input 
-                      type="checkbox" 
-                      checked={isPrivateReview} 
-                      onChange={(e) => setIsPrivateReview(e.target.checked)}
-                      className="w-4 h-4 rounded text-[#00B4D8] dark:text-[#D4AF37] focus:ring-[#00B4D8] dark:focus:ring-[#D4AF37] border-gray-300 dark:border-[#2D2D3D] bg-white dark:bg-[#1A1A24]"
-                    />
-                    <span className="text-xs font-bold text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                      🔒 إرسال كتقييم خاص للمعلم فقط (لن يظهر للعامة)
-                    </span>
-                  </label>
-                  <button type="submit" disabled={isSubmittingReview} className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-6 py-2 rounded-xl font-bold text-sm shadow-md shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:hover:bg-[#B8860B] transition-colors disabled:opacity-50">
-                    {isSubmittingReview ? "جاري الإرسال..." : "نشر التقييم"}
+          {/* Left Column: Video Player Container */}
+          <div className="lg:col-span-2 flex flex-col">
+            <div className="bg-black rounded-3xl overflow-hidden aspect-video relative shadow-lg border border-gray-200 dark:border-[#2D2D3D] w-full flex-1 min-h-[240px] md:min-h-[350px]">
+              {!canWatch ? (
+                <div className="w-full h-full absolute inset-0 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 bg-gray-900 p-8 text-center">
+                  <Lock className="w-16 h-16 mb-4 opacity-50 text-[#00B4D8] dark:text-[#D4AF37]" />
+                  <h2 className="text-2xl font-black text-white mb-2">هذا الكورس مغلق</h2>
+                  <p className="font-medium text-lg mb-6 text-gray-300">يجب عليك التسجيل في الكورس لتتمكن من مشاهدة الدروس</p>
+                  <button 
+                    onClick={handleEnroll}
+                    disabled={enrolling}
+                    className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-8 py-3 rounded-xl font-bold text-lg hover:bg-[#0077B6] dark:hover:bg-[#B8860B] transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {enrolling ? 'جاري التسجيل...' : 'اشترك الآن مجاناً'}
                   </button>
                 </div>
-              </form>
-            )}
-            <div className="space-y-4">
-              {reviews.length > 0 ? (
-                reviews.map(review => (
-                  <div key={review.id} className="border-b border-gray-100 dark:border-[#2D2D3D] pb-4 last:border-0 last:pb-0">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-gray-200 dark:bg-[#2D2D3D] rounded-full flex items-center justify-center text-sm font-bold text-gray-600 dark:text-gray-300">
-                          {review.userName.charAt(0)}
-                        </div>
-                        <span className="font-bold text-sm text-gray-900 dark:text-white">{review.userName}</span>
-                        {review.isPrivate && (
-                          <span className="text-[10px] font-bold text-yellow-600 dark:text-yellow-400 bg-yellow-500/10 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
-                            🔒 تقييم خاص بالمعلم
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} className={`w-3.5 h-3.5 ${i < review.rating ? "fill-[#F5A623] text-[#F5A623]" : "text-gray-300 dark:text-gray-600"}`} />
-                        ))}
-                      </div>
-                    </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mr-10 leading-relaxed">{review.comment}</p>
-                  </div>
-                ))
+              ) : activeLesson ? (
+                activeLesson.videoUrl.includes('youtube.com') || activeLesson.videoUrl.includes('youtu.be') ? (
+                  <iframe 
+                    src={getEmbedUrl(activeLesson.videoUrl)} 
+                    title={activeLesson.title}
+                    className="w-full h-full absolute inset-0 border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                ) : (
+                  <video src={activeLesson.videoUrl} 
+                    key={activeLesson.videoUrl}
+                    controls
+                    preload="auto"
+                    playsInline
+                    className="w-full h-full absolute inset-0 bg-black"
+                    onLoadedMetadata={(e) => {
+                      if (initialVideoTime > 0) {
+                        e.currentTarget.currentTime = initialVideoTime;
+                      }
+                    }}
+                    onTimeUpdate={handleVideoTimeUpdate}
+                    onPause={handleVideoPause}
+                    onEnded={handleVideoEnded}
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                )
               ) : (
-                <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm font-medium">
-                  لا توجد تقييمات بعد. كن أول من يقيّم هذا الكورس!
+                <div className="w-full h-full absolute inset-0 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 bg-gray-950 p-8 text-center select-none">
+                  <Video className="w-16 h-16 mb-4 opacity-60 text-[#00B4D8] dark:text-[#D4AF37]" />
+                  <h3 className="text-xl font-black text-white mb-2">بوابة التعلّم الذكيّة 📚</h3>
+                  <p className="text-sm text-gray-400 max-w-sm mx-auto leading-relaxed">
+                    {lessons.length > 0 ? "يرجى اختيار درس من القائمة الجانبية لبدء المشاهدة والتفاعل." : "لم يتم إضافة دروس لهذا الكورس بعد."}
+                  </p>
                 </div>
               )}
             </div>
           </div>
-        </div>
 
-        {/* Right Column: Lessons List */}
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-[#1A1A24] rounded-2xl shadow-sm border border-gray-200 dark:border-[#2D2D3D] flex flex-col h-[600px]">
-            <div className="p-4 border-b border-gray-100 dark:border-[#2D2D3D] bg-gray-50/50 dark:bg-[#222230]/50 rounded-t-2xl">
-              <div className="flex bg-gray-200/50 dark:bg-[#1A1A24] p-1 rounded-xl">
-                <button
-                  onClick={() => setContentTab('lessons')}
-                  className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${contentTab === 'lessons' ? 'bg-white dark:bg-[#2D2D3D] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
-                >
-                  الدروس المسجلة ({lessons.length})
-                </button>
-                <button
-                  onClick={() => setContentTab('recordings')}
-                  className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${contentTab === 'recordings' ? 'bg-white dark:bg-[#2D2D3D] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
-                >
-                  البثوث المتسجلة ({recordedStreams.length})
-                </button>
-              </div>
-            </div>
-
-            {userData?.role === 'student' && lessons.length > 0 && (
-              <div className="px-6 py-4 bg-gray-50 dark:bg-[#15151F] border-b border-gray-100 dark:border-[#2D2D3D] font-sans">
-                <div className="flex items-center justify-between mb-2 text-xs font-black">
-                  <span className="text-gray-500 dark:text-gray-400">تقدمك في الكورس</span>
-                  <span className="text-[#00B4D8] dark:text-[#D4AF37] font-bold font-mono">
-                    {((completedLessons.length / lessons.length) * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-[#2D2D3D] rounded-full h-2 overflow-hidden">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(completedLessons.length / lessons.length) * 100}%` }}
-                    transition={{ duration: 0.5, ease: "easeOut" }}
-                    className="h-full bg-gradient-to-r from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#B8860B] rounded-full"
-                  />
-                </div>
-                <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-1.5 font-bold">
-                  تم إنجاز {completedLessons.length} من أصل {lessons.length} درس بنجاح
+          {/* Right Column: Playlist & Lessons (Stretches to match video player height!) */}
+          <div className="lg:col-span-1 flex flex-col">
+            <div className="bg-white dark:bg-[#1A1A24] rounded-3xl shadow-sm border border-gray-200 dark:border-[#2D2D3D] flex flex-col w-full h-full min-h-[350px] lg:min-h-0 lg:h-full overflow-hidden">
+              <div className="p-4 border-b border-gray-100 dark:border-[#2D2D3D] bg-gray-50/50 dark:bg-[#222230]/50 rounded-t-3xl shrink-0">
+                <div className="flex bg-gray-200/50 dark:bg-[#1A1A24] p-1 rounded-xl">
+                  <button
+                    onClick={() => setContentTab('lessons')}
+                    className={`flex-1 py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${contentTab === 'lessons' ? 'bg-white dark:bg-[#2D2D3D] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                  >
+                    الدروس ({lessons.length})
+                  </button>
+                  <button
+                    onClick={() => setContentTab('recordings')}
+                    className={`flex-1 py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${contentTab === 'recordings' ? 'bg-white dark:bg-[#2D2D3D] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                  >
+                    البثوث المسجلة ({recordedStreams.length})
+                  </button>
                 </div>
               </div>
-            )}
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {contentTab === 'lessons' ? (
-                lessons.length === 0 ? (
-                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                    <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p className="font-medium">لم يتم إضافة دروس بعد</p>
+              {userData?.role === 'student' && lessons.length > 0 && (
+                <div className="px-5 py-3 bg-gray-50 dark:bg-[#15151F] border-b border-gray-100 dark:border-[#2D2D3D] font-sans shrink-0">
+                  <div className="flex items-center justify-between mb-1.5 text-[11px] font-black">
+                    <span className="text-gray-400 dark:text-gray-500">مستوى الإنجاز الدراسي</span>
+                    <span className="text-[#00B4D8] dark:text-[#D4AF37] font-bold font-mono">
+                      {((completedLessons.length / lessons.length) * 100).toFixed(1)}%
+                    </span>
                   </div>
-                ) : (
-                  lessons.map((lesson, idx) => (
-                    <div 
-                      key={lesson.id}
-                      onClick={() => canWatch && setActiveLesson(lesson)}
-                      className={`p-4 rounded-xl cursor-pointer transition-all flex items-start gap-4 group ${
-                        activeLesson?.id === lesson.id 
-                        ? 'bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 border border-[#00B4D8]/30 dark:border-[#D4AF37]/30' 
-                        : 'hover:bg-gray-50 dark:hover:bg-[#222230] border border-transparent'
-                      }`}
-                    >
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
-                        activeLesson?.id === lesson.id
-                        ? 'bg-[#00B4D8] dark:bg-[#D4AF37] text-white'
-                        : completedLessons.includes(lesson.id)
-                        ? 'bg-green-500 text-white'
-                        : 'bg-gray-100 dark:bg-[#2D2D3D] text-gray-600 dark:text-gray-300 group-hover:bg-[#00B4D8]/20 dark:group-hover:bg-[#D4AF37]/20 group-hover:text-[#00B4D8] dark:group-hover:text-[#D4AF37]'
-                      }`}>
-                        {completedLessons.includes(lesson.id) && activeLesson?.id !== lesson.id ? (
-                          <Check className="w-4 h-4 stroke-[3px]" />
-                        ) : (
-                          idx + 1
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className={`font-bold truncate text-sm mb-1 ${
-                          activeLesson?.id === lesson.id ? 'text-[#0077B6] dark:text-[#B8860B]' : 'text-gray-900 dark:text-white'
-                        }`}>
-                          {lesson.title}
-                        </h4>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{lesson.description || 'فيديو تعليمي'}</p>
-                      </div>
-                      {userData?.role === 'student' && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleLessonComplete(lesson.id);
-                          }}
-                          className={`p-2 rounded-xl transition-all self-center shrink-0 ${
-                            completedLessons.includes(lesson.id)
-                              ? 'text-green-500 hover:text-green-600 bg-green-50 dark:bg-green-950/20'
-                              : 'text-gray-300 dark:text-gray-600 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:bg-gray-100 dark:hover:bg-[#2D2D3D]'
-                          }`}
-                          title={completedLessons.includes(lesson.id) ? "إلغاء تحديد كمكتمل" : "تحديد كمكتمل"}
-                        >
-                          <Check className={`w-4 h-4 ${completedLessons.includes(lesson.id) ? 'stroke-[3px]' : 'stroke-[1.5px]'}`} />
-                        </button>
-                      )}
-                      {isTeacher && (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDeleteLesson(lesson.id); }}
-                          className="text-gray-400 hover:text-red-500 transition-colors p-2"
-                          title="حذف الدرس"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                  <div className="w-full bg-gray-200 dark:bg-[#2D2D3D] rounded-full h-1.5 overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(completedLessons.length / lessons.length) * 100}%` }}
+                      transition={{ duration: 0.5, ease: "easeOut" }}
+                      className="h-full bg-gradient-to-r from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#B8860B] rounded-full"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {contentTab === 'lessons' ? (
+                  lessons.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                      <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30 text-gray-400" />
+                      <p className="font-bold text-xs">لا يوجد دروس مضافة بعد</p>
                     </div>
-                  ))
-                )
-              ) : (
-                recordedStreams.length === 0 ? (
-                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                    <Video className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p className="font-medium">لا توجد بثوث متسجلة</p>
-                  </div>
-                ) : (
-                  recordedStreams.map((stream, idx) => (
-                    <div 
-                      key={stream.id}
-                      className="p-4 bg-white dark:bg-[#1A1A24] rounded-2xl border border-gray-100 dark:border-[#2D2D3D] shadow-sm mb-3 space-y-3"
-                    >
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-black text-gray-900 dark:text-white truncate">{stream.title}</h4>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-1 font-bold">
-                            <Calendar className="w-3.5 h-3.5" />
-                            {new Date(stream.endedAt || stream.startedAt || Date.now()).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                          </div>
+                  ) : (
+                    lessons.map((lesson, idx) => (
+                      <div 
+                        key={lesson.id}
+                        onClick={() => canWatch && setActiveLesson(lesson)}
+                        className={`p-3.5 rounded-xl cursor-pointer transition-all flex items-center gap-3 group border ${
+                          activeLesson?.id === lesson.id 
+                          ? 'bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 border-[#00B4D8]/30 dark:border-[#D4AF37]/30 shadow-sm' 
+                          : 'hover:bg-gray-50 dark:hover:bg-[#222230] border-transparent'
+                        }`}
+                      >
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                          activeLesson?.id === lesson.id
+                          ? 'bg-[#00B4D8] dark:bg-[#D4AF37] text-white'
+                          : completedLessons.includes(lesson.id)
+                          ? 'bg-green-500 text-white'
+                          : 'bg-gray-100 dark:bg-[#2D2D3D] text-gray-650 dark:text-gray-300 group-hover:bg-[#00B4D8]/20 dark:group-hover:bg-[#D4AF37]/20 group-hover:text-[#00B4D8] dark:group-hover:text-[#D4AF37]'
+                        }`}>
+                          {completedLessons.includes(lesson.id) && activeLesson?.id !== lesson.id ? (
+                            <Check className="w-3.5 h-3.5 stroke-[3px]" />
+                          ) : (
+                            idx + 1
+                          )}
                         </div>
-                        {stream.recordedUrl && (
-                          <a 
-                            href={stream.recordedUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg text-[10px] font-black hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-all border border-indigo-100 dark:border-indigo-500/20"
+                        <div className="flex-1 min-w-0">
+                          <h4 className={`font-black truncate text-xs mb-0.5 ${
+                            activeLesson?.id === lesson.id ? 'text-[#0077B6] dark:text-[#B8860B]' : 'text-gray-900 dark:text-white'
+                          }`}>
+                            {lesson.title}
+                          </h4>
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate">{lesson.description || 'فيديو تعليمي'}</p>
+                        </div>
+                        {userData?.role === 'student' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleLessonComplete(lesson.id);
+                            }}
+                            className={`p-1.5 rounded-xl transition-all self-center shrink-0 cursor-pointer ${
+                              completedLessons.includes(lesson.id)
+                                ? 'text-green-500 hover:text-green-600 bg-green-50 dark:bg-green-950/20'
+                                : 'text-gray-300 dark:text-gray-600 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:bg-gray-100 dark:hover:bg-[#2D2D3D]'
+                            }`}
+                            title={completedLessons.includes(lesson.id) ? "إلغاء تحديد كمكتمل" : "تحديد كمكتمل"}
                           >
-                            <Play className="w-3 h-3" />
-                            مشاهدة التسجيل
-                          </a>
+                            <Check className={`w-3.5 h-3.5 ${completedLessons.includes(lesson.id) ? 'stroke-[3px]' : 'stroke-[1.5px]'}`} />
+                          </button>
+                        )}
+                        {isTeacher && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteLesson(lesson.id); }}
+                            className="text-gray-400 hover:text-red-500 transition-colors p-1.5 cursor-pointer"
+                            title="حذف الدرس"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
                       </div>
-                      
-                      {stream.recordingSummary && (
-                        <div className="text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-[#222230] p-3 rounded-xl border border-gray-100 dark:border-[#2D2D3D]">
-                          <span className="font-bold text-gray-900 dark:text-white block mb-1">ملخص الحصة:</span>
-                          {stream.recordingSummary}
+                    ))
+                  )
+                ) : (
+                  recordedStreams.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                      <Video className="w-12 h-12 mx-auto mb-3 opacity-30 text-gray-400" />
+                      <p className="font-bold text-xs">لا توجد حصص مسجلة</p>
+                    </div>
+                  ) : (
+                    recordedStreams.map((stream, idx) => (
+                      <div 
+                        key={stream.id}
+                        className="p-3 bg-gray-50 dark:bg-[#222230] rounded-2xl border border-gray-100 dark:border-[#2D2D3D] space-y-2 text-right"
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-black text-xs text-gray-900 dark:text-white truncate">{stream.title}</h4>
+                            <div className="text-[9px] text-gray-400 dark:text-gray-500 flex items-center gap-1 mt-0.5 font-bold">
+                              <Calendar className="w-3 h-3" />
+                              {new Date(stream.endedAt || stream.startedAt || Date.now()).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                            </div>
+                          </div>
+                          {stream.recordedUrl && (
+                            <a 
+                              href={stream.recordedUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="shrink-0 flex items-center gap-1 px-2.5 py-1 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-lg text-[9px] font-black hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-all border border-indigo-100 dark:border-indigo-500/20"
+                            >
+                              <Play className="w-2.5 h-2.5" />
+                              مشاهدة
+                            </a>
+                          )}
                         </div>
-                      )}
-                      
-                      {stream.materials && stream.materials.length > 0 && (
-                        <div className="pt-2 border-t border-gray-100 dark:border-[#2D2D3D]">
-                          <span className="text-[10px] font-black text-gray-400 mb-2 block">المرفقات ({stream.materials.length}):</span>
-                          <div className="flex flex-wrap gap-2">
+                        
+                        {stream.recordingSummary && (
+                          <div className="text-[10px] text-gray-600 dark:text-gray-300 bg-white dark:bg-[#1A1A24] p-2.5 rounded-xl border border-gray-100 dark:border-[#2D2D3D] leading-relaxed">
+                            {stream.recordingSummary}
+                          </div>
+                        )}
+                        
+                        {stream.materials && stream.materials.length > 0 && (
+                          <div className="pt-1.5 border-t border-gray-100 dark:border-[#2D2D3D] flex flex-wrap gap-1">
                             {stream.materials.map((mat: any, mIdx: number) => (
                               <a
                                 key={mIdx}
                                 href={mat.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-[#2D2D3D] border border-gray-200 dark:border-[#3D3D4D] rounded-lg hover:border-[#00B4D8] dark:hover:border-[#D4AF37] transition-all group"
+                                className="flex items-center gap-1 px-2 py-1 bg-white dark:bg-[#2D2D3D] border border-gray-150 dark:border-[#2D2D3D] rounded-md hover:border-[#00B4D8] dark:hover:border-[#D4AF37] transition-all group"
                               >
-                                <FileText className="w-3.5 h-3.5 text-gray-400 group-hover:text-[#00B4D8] dark:group-hover:text-[#D4AF37]" />
-                                <span className="text-[10px] font-bold text-gray-600 dark:text-gray-300 truncate max-w-[120px]">{mat.name}</span>
-                                <Download className="w-3 h-3 text-gray-400" />
+                                <FileText className="w-2.5 h-2.5 text-gray-400 group-hover:text-[#00B4D8]" />
+                                <span className="text-[9px] font-bold text-gray-500 dark:text-gray-300 truncate max-w-[80px]">{mat.name}</span>
                               </a>
                             ))}
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )
+                        )}
+                      </div>
+                    ))
+                  )
+                )}
+              </div>
+
+              {isTeacher && (
+                <div className="p-4 border-t border-gray-100 dark:border-[#2D2D3D] bg-white dark:bg-[#1A1A24] rounded-b-3xl shrink-0">
+                  <button
+                    onClick={() => setShowAddLesson(true)}
+                    className="w-full py-2.5 rounded-xl border-2 border-dashed border-gray-300 dark:border-[#2D2D3D] text-gray-600 dark:text-gray-400 hover:border-[#00B4D8] dark:hover:border-[#D4AF37] hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:bg-gray-50 dark:hover:bg-[#222230] transition-all flex items-center justify-center gap-2 font-black text-xs cursor-pointer animate-pulse hover:animate-none"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>إضافة درس جديد للكورس</span>
+                  </button>
+                </div>
               )}
             </div>
+          </div>
+        </div>
 
-            {isTeacher && (
-              <div className="p-4 border-t border-gray-100 dark:border-[#2D2D3D] bg-white dark:bg-[#1A1A24] rounded-b-2xl">
-                <button
-                  onClick={() => setShowAddLesson(true)}
-                  className="w-full py-3 rounded-xl border-2 border-dashed border-gray-300 dark:border-[#2D2D3D] text-gray-600 dark:text-gray-400 hover:border-[#00B4D8] dark:hover:border-[#D4AF37] hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:bg-gray-50 dark:hover:bg-[#222230] transition-all flex items-center justify-center gap-2 font-bold"
-                >
-                  <Plus className="w-5 h-5" />
-                  إضافة درس جديد
-                </button>
+        {/* ROW 2: Balanced Details, Tabs & Extra Side Panels */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          
+          {/* Left Side: Tabs Panel & Reviews (col-span-2) */}
+          <div className="lg:col-span-2 space-y-6">
+            {activeLesson ? (
+              <div className="bg-white dark:bg-[#1A1A24] rounded-3xl p-6 shadow-sm border border-gray-200 dark:border-[#2D2D3D] space-y-6">
+                {/* Tabs header inside the card */}
+                <div className="flex border-b border-gray-100 dark:border-[#2D2D3D] pb-3 justify-between items-center">
+                  <div className="flex gap-4">
+                    <button
+                      onClick={() => setLessonTab('info')}
+                      className={`pb-2 px-1 text-sm font-black transition-all relative cursor-pointer ${
+                        lessonTab === 'info'
+                          ? 'text-[#00B4D8] dark:text-[#D4AF37]'
+                          : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
+                      }`}
+                    >
+                      وصف الدرس
+                      {lessonTab === 'info' && (
+                        <motion.div layoutId="activeLessonTabLine" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => setLessonTab('quiz')}
+                      className={`pb-2 px-1 text-sm font-black transition-all relative flex items-center gap-1.5 cursor-pointer ${
+                        lessonTab === 'quiz'
+                          ? 'text-[#00B4D8] dark:text-[#D4AF37]'
+                          : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
+                      }`}
+                    >
+                      <Award className="w-4 h-4" />
+                      الاختبار التفاعلي
+                      {lessonTab === 'quiz' && (
+                        <motion.div layoutId="activeLessonTabLine" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
+                      )}
+                    </button>
+                    
+                    {userData?.role === 'student' && (
+                      <button
+                        onClick={() => setLessonTab('notes')}
+                        className={`pb-2 px-1 text-sm font-black transition-all relative flex items-center gap-2 cursor-pointer ${
+                          lessonTab === 'notes'
+                            ? 'text-[#00B4D8] dark:text-[#D4AF37]'
+                            : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
+                        }`}
+                      >
+                        <FileText className="w-4 h-4" />
+                        ملاحظاتي الشخصية
+                        {lessonTab === 'notes' && (
+                          <motion.div layoutId="activeLessonTabLine" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
+                        )}
+                      </button>
+                    )}
+                    
+                    {userData?.role === 'student' && (
+                      <button
+                        onClick={() => setLessonTab('pomodoro')}
+                        className={`pb-2 px-1 text-sm font-black transition-all relative flex items-center gap-1.5 cursor-pointer ${
+                          lessonTab === 'pomodoro'
+                            ? 'text-[#00B4D8] dark:text-[#D4AF37]'
+                            : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
+                        }`}
+                      >
+                        <Clock className="w-4 h-4" />
+                        تنظيم الوقت (بومودورو)
+                        {lessonTab === 'pomodoro' && (
+                          <motion.div layoutId="activeLessonTabLine" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  
+                  {lessonTab === 'notes' && (
+                    <div className="flex items-center gap-2 font-sans">
+                      {saveStatus === 'saving' && (
+                        <span className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1.5 font-bold">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#00B4D8] dark:text-[#D4AF37]" />
+                          جاري الحفظ...
+                        </span>
+                      )}
+                      {saveStatus === 'saved' && (
+                        <span className="text-xs text-green-500 dark:text-green-400 flex items-center gap-1.5 font-bold">
+                          <Check className="w-3.5 h-3.5" />
+                          تم الحفظ
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <AnimatePresence mode="wait">
+                  {lessonTab === 'info' && (
+                    <motion.div
+                      key="info"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <h2 className="text-xl font-black text-gray-900 dark:text-white mb-2">{activeLesson.title}</h2>
+                      <p className="text-gray-650 dark:text-gray-300 text-sm leading-relaxed whitespace-pre-wrap mb-6">{activeLesson.description || 'لا يوجد وصف لهذا الدرس.'}</p>
+                      
+                      {userData?.role === 'student' && (
+                        <div className="pt-5 border-t border-gray-100 dark:border-[#2D2D3D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm font-black text-gray-900 dark:text-white">إكمال الدرس الحالي</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">حدد هذا الدرس كمكتمل لتحديث نسبة تقدمك العامة في هذا الكورس</span>
+                          </div>
+                          <button
+                            onClick={() => handleToggleLessonComplete(activeLesson.id)}
+                            className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                              completedLessons.includes(activeLesson.id)
+                                ? 'bg-green-500 text-white shadow-md shadow-green-500/20 hover:bg-green-600'
+                                : 'bg-gray-100 hover:bg-gray-200 dark:bg-[#222230] dark:hover:bg-[#2D2D3D] text-gray-800 dark:text-gray-200'
+                            }`}
+                          >
+                            <Check className={`w-4 h-4 ${completedLessons.includes(activeLesson.id) ? 'stroke-[3px]' : ''}`} />
+                            {completedLessons.includes(activeLesson.id) ? 'تم إكمال الدرس ✓' : 'تحديد كمكتمل'}
+                          </button>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+
+                  {lessonTab === 'quiz' && userData && (
+                    <motion.div
+                      key="quiz"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <QuizSection
+                        courseId={id || ''}
+                        lessonId={activeLesson.id}
+                        lessonTitle={activeLesson.title}
+                        userData={userData}
+                        isTeacher={userData.role === 'teacher'}
+                      />
+                    </motion.div>
+                  )}
+
+                  {lessonTab === 'notes' && (
+                    <motion.div
+                      key="notes"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.15 }}
+                      className="space-y-4"
+                    >
+                      <div className="flex gap-2 bg-gray-50 dark:bg-[#0D0D12] p-1 rounded-xl w-fit">
+                        <button
+                          type="button"
+                          onClick={() => setNotesTab('current')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            notesTab === 'current'
+                              ? 'bg-white dark:bg-[#1A1A24] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm'
+                              : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                          }`}
+                        >
+                          ملاحظات هذا الدرس
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNotesTab('all')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                            notesTab === 'all'
+                              ? 'bg-white dark:bg-[#1A1A24] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm'
+                              : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                          }`}
+                        >
+                          <History className="w-3.5 h-3.5" />
+                          مراجعة كل الملاحظات ({allNotes.length})
+                        </button>
+                      </div>
+
+                      {notesTab === 'current' ? (
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs text-gray-400 dark:text-gray-500 font-bold">
+                              اكتب ملاحظاتك المهمة هنا لمراجعتها وتسهيل المذاكرة لاحقاً:
+                            </span>
+                            
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => insertText('💡 فكرة مهمة: ')}
+                                className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/30 dark:hover:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-xs rounded-xl font-bold transition-colors cursor-pointer"
+                              >
+                                💡 فكرة
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => insertText('❓ سؤال للمراجعة: ')}
+                                className="px-2.5 py-1.5 bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-950/30 dark:hover:bg-yellow-900/40 text-yellow-600 dark:text-yellow-400 text-xs rounded-xl font-bold transition-colors cursor-pointer"
+                              >
+                                ❓ سؤال
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const video = document.querySelector('video');
+                                  if (video) {
+                                    const mins = Math.floor(video.currentTime / 60).toString().padStart(2, '0');
+                                    const secs = Math.floor(video.currentTime % 60).toString().padStart(2, '0');
+                                    insertText(`🕒 عند الدقيقة [${mins}:${secs}]: `);
+                                  } else {
+                                    insertText('🕒 نقطة زمنية: ');
+                                  }
+                                }}
+                                className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 text-xs rounded-xl font-bold transition-colors cursor-pointer"
+                              >
+                                🕒 ختم زمني
+                              </button>
+                            </div>
+                          </div>
+
+                          <textarea
+                            value={noteContent}
+                            onChange={(e) => setNoteContent(e.target.value)}
+                            placeholder="اكتب القوانين أو الأفكار الذهبية هنا للدرس..."
+                            className="w-full min-h-[150px] bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] transition-colors resize-y leading-relaxed font-medium"
+                            dir="rtl"
+                          />
+
+                          <div className="flex justify-between items-center">
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(noteContent);
+                                  toast.success('تم نسخ الملاحظات! 📋');
+                                }}
+                                disabled={!noteContent}
+                                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-[#2D2D3D] dark:hover:bg-[#3d3d52] disabled:opacity-50 text-gray-750 dark:text-gray-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                              >
+                                نسخ الملاحظة
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={handleSaveNote}
+                              disabled={isSavingNote}
+                              className="bg-[#00B4D8] dark:bg-[#D4AF37] hover:bg-[#0077B6] dark:hover:bg-[#B8860B] disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              حفظ الملاحظة
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-4 max-h-[300px] overflow-y-auto">
+                          {allNotes.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                              <p className="text-sm font-medium">لا توجد ملاحظات مضافة بعد.</p>
+                            </div>
+                          ) : (
+                            allNotes.map((note) => (
+                              <div key={note.id} className="p-4 rounded-xl bg-gray-50 dark:bg-[#222230] border border-gray-100 dark:border-[#2D2D3D] space-y-1.5 text-right relative">
+                                <div className="flex justify-between items-center border-b border-gray-200/50 dark:border-gray-800 pb-2">
+                                  <span className="font-bold text-xs text-gray-900 dark:text-white">
+                                    {note.lessonTitle}
+                                  </span>
+                                  <span className="text-[9px] text-gray-400">
+                                    {new Date(note.updatedAt).toLocaleDateString('ar-EG')}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-650 dark:text-gray-300 whitespace-pre-wrap">{note.content}</p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+
+                  {lessonTab === 'pomodoro' && userData && (
+                    <motion.div
+                      key="pomodoro"
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <PomodoroTimer
+                        courseId={id || ''}
+                        courseTitle={course?.title || ''}
+                        lessonId={activeLesson?.id}
+                        lessonTitle={activeLesson?.title}
+                        userData={userData}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-[#1A1A24] rounded-3xl p-6 shadow-sm border border-gray-200 dark:border-[#2D2D3D]">
+                <h2 className="text-xl font-black text-gray-900 dark:text-white mb-3">عن هذا الكورس الدراسي</h2>
+                <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{course.description || "لا يوجد وصف مفصل متاح لهذا الكورس حالياً."}</p>
               </div>
             )}
-          </div>
-          
-          {/* Quick Notes Widget (Local Storage) */}
-          <div className="bg-white dark:bg-[#1A1A24] rounded-2xl shadow-sm border border-gray-200 dark:border-[#2D2D3D] flex flex-col">
-            <div className="p-4 border-b border-gray-100 dark:border-[#2D2D3D] bg-[#00B4D8]/5 dark:bg-[#D4AF37]/5 rounded-t-2xl flex items-center justify-between">
-              <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                <Edit2 className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37]" />
-                ملاحظات سريعة محليّة
-              </h3>
-              <span className="text-[10px] text-gray-500 font-bold bg-white dark:bg-[#13131C] px-2 py-1 rounded-md border border-gray-100 dark:border-[#2D2D3D]">
-                تُحفظ تلقائياً 💾
-              </span>
-            </div>
-            <div className="p-4">
-              <textarea
-                value={localQuickNotes}
-                onChange={(e) => setLocalQuickNotes(e.target.value)}
-                placeholder="اكتب ملاحظاتك السريعة هنا أثناء مشاهدة الدرس... (يتم حفظها في متصفحك محلياً لتعود إليها لاحقاً)"
-                className="w-full min-h-[150px] bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl p-4 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] transition-colors resize-y leading-relaxed font-medium"
-                dir="rtl"
-              />
+
+            {/* Reviews Section Card */}
+            <div className="bg-white dark:bg-[#1A1A24] rounded-3xl p-6 shadow-sm border border-gray-200 dark:border-[#2D2D3D] space-y-6">
+              
+              {/* Course Like & Social Stats Bar */}
+              <div className="bg-gray-50/50 dark:bg-[#222230]/40 rounded-2xl p-4 border border-gray-100 dark:border-[#2D2D3D] flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="relative flex items-center">
+                    {/* Floating Particles Container */}
+                    <AnimatePresence>
+                      {likeParticles.map((particle) => (
+                        <motion.span
+                          key={particle.id}
+                          initial={{ opacity: 1, scale: 0, x: 0, y: 0 }}
+                          animate={{ 
+                            opacity: [1, 1, 0], 
+                            scale: [0, particle.scale, 0], 
+                            x: particle.x, 
+                            y: particle.y, 
+                            rotate: particle.rotation 
+                          }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 1.2, ease: "easeOut" }}
+                          className="absolute pointer-events-none text-2xl z-50 select-none"
+                          style={{ right: '50%', top: '-20px' }}
+                        >
+                          {particle.emoji}
+                        </motion.span>
+                      ))}
+                    </AnimatePresence>
+
+                    <div className="flex -space-x-1 space-x-reverse">
+                      <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center text-white border-2 border-white dark:border-[#1A1A24] text-xs shadow-sm">
+                        ❤️
+                      </div>
+                      <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white border-2 border-white dark:border-[#1A1A24] text-xs shadow-sm">
+                        👍
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="text-right">
+                    <p className="text-sm font-black text-gray-950 dark:text-white">
+                      {courseLikesCount > 0 
+                        ? `${courseLikesCount} طالب أعجبهم هذا الكورس` 
+                        : "كن أول من يسجل إعجابه بهذا الكورس"
+                      }
+                    </p>
+                    <p className="text-[11px] font-medium text-gray-500">
+                      تفاعل الطلاب الإيجابي يزيد من حماس المعلم لتقديم المزيد! 🌟
+                    </p>
+                  </div>
+                </div>
+
+                {/* Like Button Trigger */}
+                <div className="flex items-center gap-2">
+                  <motion.button
+                    onClick={handleToggleCourseLike}
+                    whileTap={{ scale: 0.85 }}
+                    whileHover={{ scale: 1.03 }}
+                    className={`px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-sm border cursor-pointer ${
+                      isLiked 
+                        ? "bg-red-500 text-white border-red-500 hover:bg-red-600" 
+                        : "bg-white dark:bg-[#1C1C26] text-gray-750 dark:text-gray-300 border-gray-200 dark:border-[#2D2D3D] hover:bg-gray-50 dark:hover:bg-[#252533]"
+                    }`}
+                  >
+                    <Heart className={`w-4 h-4 ${isLiked ? "fill-white text-white animate-pulse" : "text-gray-400 dark:text-gray-500"}`} />
+                    <span>{isLiked ? "أعجبني الكورس ❤️" : "تسجيل إعجاب بالكورس"}</span>
+                  </motion.button>
+                </div>
+              </div>
+
+              {/* Add Comment Section */}
+              <h2 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2 border-b border-gray-100 dark:border-gray-800 pb-3">
+                <MessageSquare className="w-5 h-5 text-[#00B4D8] dark:text-[#D4AF37]" />
+                <span>تعليقات ومناقشات الطلاب ({reviews.length})</span>
+              </h2>
+              
+              {userData?.role === "student" && canWatch && (
+                <form onSubmit={handleSubmitReview} className="bg-gray-50 dark:bg-[#222230] p-5 rounded-2xl border border-gray-100 dark:border-[#2D2D3D] space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-black text-gray-900 dark:text-white flex items-center gap-1.5">
+                      <span>اكتب تعليقك وقيم الأستاذ:</span>
+                    </h3>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button key={star} type="button" onClick={() => setRating(star)} className="focus:outline-none hover:scale-110 transition-transform cursor-pointer">
+                          <Star className={`w-5 h-5 ${star <= rating ? "fill-yellow-500 text-yellow-500" : "text-gray-300 dark:text-gray-600"}`} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <textarea 
+                    required 
+                    value={comment} 
+                    onChange={(e) => setComment(e.target.value)} 
+                    placeholder="اكتب تعليقك الصادق وملاحظاتك لمساعدة زملائك..." 
+                    className="w-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] rounded-xl p-3.5 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:ring-1 focus:ring-[#00B4D8] dark:focus:ring-[#D4AF37] resize-none leading-relaxed" 
+                    rows={3}
+                  />
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+                    <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={isPrivateReview} 
+                        onChange={(e) => setIsPrivateReview(e.target.checked)}
+                        className="w-4 h-4 rounded text-[#00B4D8] dark:text-[#D4AF37] focus:ring-[#00B4D8] border-gray-300 dark:border-[#2D2D3D] bg-white dark:bg-[#1A1A24]"
+                      />
+                      <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400">
+                        🔒 إرسال كتقييم خاص للأستاذ فقط (لن ينشر للعامة)
+                      </span>
+                    </label>
+                    <button 
+                      type="submit" 
+                      disabled={isSubmittingReview || !comment.trim()} 
+                      className="bg-gradient-to-r from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#B8860B] text-white dark:text-gray-900 px-6 py-2.5 rounded-xl font-black text-xs shadow-md hover:opacity-95 transition-opacity disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                    >
+                      {isSubmittingReview ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>جاري النشر...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-3.5 h-3.5" />
+                          <span>نشر التعليق والتقييم</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Comments Feed List */}
+              <div className="space-y-6 pt-2">
+                {reviews.length > 0 ? (
+                  reviews.map(review => {
+                    const charCode = review.userName.charCodeAt(0) || 0;
+                    const avatarGradients = [
+                      "from-purple-500 to-indigo-500",
+                      "from-cyan-500 to-blue-600",
+                      "from-pink-500 to-rose-500",
+                      "from-amber-500 to-orange-600",
+                      "from-emerald-500 to-teal-600",
+                    ];
+                    const grad = avatarGradients[charCode % avatarGradients.length];
+                    const isReviewLiked = review.likedUserIds?.includes(userData?.id || "");
+                    const reviewLikes = review.likesCount || 0;
+                    
+                    // Determine Role Tag
+                    const isTeacherComment = review.userId === course.teacherId;
+                    const isMyComment = review.userId === userData?.id;
+
+                    return (
+                      <div key={review.id} className="group relative flex gap-3 text-right" dir="rtl">
+                        
+                        {/* Beautiful Large Avatar */}
+                        <div className={`w-10 h-10 rounded-full bg-gradient-to-tr ${grad} flex items-center justify-center text-sm font-black text-white shadow-md flex-shrink-0 relative`}>
+                          {review.userName.charAt(0)}
+                          {isTeacherComment && (
+                            <span className="absolute -bottom-1 -right-1 bg-yellow-400 text-xs rounded-full p-0.5 shadow">
+                              ⭐
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Comment Content Bubble Stack */}
+                        <div className="flex-1 space-y-1.5 min-w-0">
+                          
+                          {/* Main Bubble */}
+                          <div className="bg-gray-50 dark:bg-[#1E1E2B]/80 hover:bg-gray-100/70 dark:hover:bg-[#252536]/80 border border-gray-100/50 dark:border-gray-800/60 rounded-2xl p-4 shadow-sm relative transition-all">
+                            
+                            {/* Header */}
+                            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-sm text-gray-950 dark:text-white">
+                                  {review.userName}
+                                </span>
+
+                                {/* Badges */}
+                                {isTeacherComment && (
+                                  <span className="text-[9px] font-black bg-gradient-to-r from-amber-500 to-yellow-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                    👨‍🏫 معلم المادة
+                                  </span>
+                                )}
+                                {isMyComment && !isTeacherComment && (
+                                  <span className="text-[9px] font-black bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] px-2 py-0.5 rounded-full">
+                                    أنت
+                                  </span>
+                                )}
+                                {!isTeacherComment && !isMyComment && (
+                                  <span className="text-[9px] font-black bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full">
+                                    🎓 طالب مشترك
+                                  </span>
+                                )}
+
+                                {review.isPrivate && (
+                                  <span className="text-[9px] font-black text-yellow-600 dark:text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    🔒 خاص بالأستاذ
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Rating Stars */}
+                              <div className="flex flex-col items-end gap-1 select-none">
+                                <div className="flex items-center gap-0.5 bg-yellow-500/5 px-2 py-1 rounded-lg">
+                                  {[...Array(5)].map((_, i) => (
+                                    <Star key={i} className={`w-3 h-3 ${i < review.rating ? "fill-yellow-500 text-yellow-500" : "text-gray-200 dark:text-gray-700"}`} />
+                                  ))}
+                                </div>
+                                {(review.teacherRating || review.contentRating) && (
+                                  <div className="flex items-center gap-2 text-[9px] text-gray-500 dark:text-gray-400 font-bold">
+                                    {review.teacherRating && (
+                                      <span>👨‍🏫 الأستاذ: {review.teacherRating}/5</span>
+                                    )}
+                                    {review.contentRating && (
+                                      <span>📖 المحتوى: {review.contentRating}/5</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Comment Body */}
+                            <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed font-medium whitespace-pre-wrap">
+                              {review.comment}
+                            </p>
+
+                            {/* Floating Reaction Count on Bubble (Facebook Style) */}
+                            {reviewLikes > 0 && (
+                              <div className="absolute -bottom-2 left-4 bg-white dark:bg-[#1A1A24] border border-gray-100 dark:border-[#2D2D3D] rounded-full px-2 py-0.5 flex items-center gap-1 shadow-sm text-[10px] font-black text-gray-500 dark:text-gray-400 select-none z-10">
+                                <span className="flex items-center justify-center bg-blue-500 rounded-full w-3.5 h-3.5 text-[8px] text-white">👍</span>
+                                <span>{reviewLikes}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Footer Action Bar (Facebook Style) */}
+                          <div className="flex items-center gap-4 px-2 text-[11px] font-black text-gray-500 dark:text-gray-400 select-none">
+                            {/* Like Action */}
+                            <button 
+                              onClick={() => handleToggleReviewLike(review.id)}
+                              className={`flex items-center gap-1 hover:underline transition-colors cursor-pointer ${
+                                isReviewLiked ? "text-blue-500" : "hover:text-gray-800 dark:hover:text-white"
+                              }`}
+                            >
+                              <ThumbsUp className={`w-3.5 h-3.5 ${isReviewLiked ? "fill-blue-500 text-blue-500" : ""}`} />
+                              <span>{isReviewLiked ? "أعجبني" : "إعجاب"}</span>
+                            </button>
+
+                            {/* Reply Toggle */}
+                            <button 
+                              onClick={() => {
+                                setReplyText("");
+                                setActiveReplyInput(activeReplyInput === review.id ? null : review.id);
+                              }}
+                              className="flex items-center gap-1 hover:underline hover:text-gray-800 dark:hover:text-white transition-colors cursor-pointer"
+                            >
+                              <Reply className="w-3.5 h-3.5 rotate-180" />
+                              <span>رد</span>
+                            </button>
+
+                            {/* Readable Date */}
+                            <span className="text-[10px] text-gray-400 font-normal">
+                              {new Date(review.createdAt).toLocaleDateString('ar-EG', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                          </div>
+
+                          {/* Threaded Nested Replies Tree */}
+                          {review.replies && review.replies.length > 0 && (
+                            <div className="mr-4 mt-3 border-r-2 border-gray-100 dark:border-gray-800 pr-4 space-y-4 relative">
+                              {review.replies.map(reply => {
+                                const replyCharCode = reply.userName.charCodeAt(0) || 0;
+                                const replyGrad = avatarGradients[replyCharCode % avatarGradients.length];
+                                const isReplyTeacher = reply.userRole === 'teacher';
+
+                                return (
+                                  <div key={reply.id} className="flex gap-2.5 text-right items-start">
+                                    {/* Mini Avatar */}
+                                    <div className={`w-7 h-7 rounded-full bg-gradient-to-tr ${replyGrad} flex items-center justify-center text-[11px] font-black text-white shadow flex-shrink-0 relative`}>
+                                      {reply.userName.charAt(0)}
+                                    </div>
+                                    
+                                    {/* Reply Bubble */}
+                                    <div className="flex-1 bg-gray-50/70 dark:bg-[#1E1E2B]/50 border border-gray-100/30 dark:border-gray-800/40 rounded-xl p-3 shadow-sm min-w-0">
+                                      <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                        <span className="font-black text-[11px] text-gray-950 dark:text-white">
+                                          {reply.userName}
+                                        </span>
+                                        {isReplyTeacher && (
+                                          <span className="text-[8px] font-black bg-gradient-to-r from-amber-500 to-yellow-500 text-white px-1.5 py-0.5 rounded-full">
+                                            معلم المادة 👨‍🏫
+                                          </span>
+                                        )}
+                                        {reply.userId === userData?.id && !isReplyTeacher && (
+                                          <span className="text-[8px] font-black bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] px-1.5 py-0.5 rounded-full">
+                                            أنت
+                                          </span>
+                                        )}
+                                        <span className="text-[9px] text-gray-400 font-normal mr-auto">
+                                          {new Date(reply.createdAt).toLocaleDateString('ar-EG', {
+                                            month: 'short',
+                                            day: 'numeric'
+                                          })}
+                                        </span>
+                                      </div>
+                                      <p className="text-[11px] text-gray-750 dark:text-gray-350 leading-relaxed font-medium">
+                                        {reply.comment}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Inline Reply Input Form */}
+                          <AnimatePresence>
+                            {activeReplyInput === review.id && (
+                              <motion.div 
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="mr-4 pt-2 overflow-hidden"
+                              >
+                                <div className="flex gap-2 items-end bg-gray-50 dark:bg-[#1e1e2c] p-2.5 rounded-xl border border-gray-200 dark:border-[#2D2D3D]">
+                                  <textarea 
+                                    value={replyText}
+                                    onChange={(e) => setReplyText(e.target.value)}
+                                    placeholder={`الرد على ${review.userName}...`}
+                                    className="flex-1 bg-white dark:bg-[#151520] border border-gray-250 dark:border-gray-800 rounded-lg px-3 py-1.5 text-xs text-gray-950 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] resize-none h-10"
+                                    rows={1}
+                                  />
+                                  <button 
+                                    onClick={() => handleSubmitReply(review.id)}
+                                    disabled={isSubmittingReply[review.id] || !replyText.trim()}
+                                    className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white dark:text-gray-950 p-2 rounded-lg hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer flex items-center justify-center flex-shrink-0 w-8 h-8"
+                                  >
+                                    {isSubmittingReply[review.id] ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Send className="w-4 h-4" />
+                                    )}
+                                  </button>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-12 text-gray-400 text-xs font-bold border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-2xl flex flex-col items-center justify-center gap-3">
+                    <span className="text-3xl">💬</span>
+                    <span>لا توجد تعليقات منشورة لهذا الكورس بعد. كن أول من يترك انطباعاً جميلاً!</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-            </div>
+          {/* Right Side: Quick Notes / Teacher Control Panel (col-span-1) */}
+          <div className="lg:col-span-1 space-y-6">
+            
+            {/* Widget 1: If student, show local Quick Notes Widget */}
+            {userData?.role === 'student' && canWatch && (
+              <div className="bg-white dark:bg-[#1A1A24] rounded-3xl shadow-sm border border-gray-200 dark:border-[#2D2D3D] flex flex-col overflow-hidden">
+                <div className="p-4 border-b border-gray-100 dark:border-[#2D2D3D] bg-[#00B4D8]/5 dark:bg-[#D4AF37]/5 flex items-center justify-between">
+                  <h3 className="font-black text-xs text-gray-900 dark:text-white flex items-center gap-2">
+                    <Edit2 className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37]" />
+                    <span>مسودة ملاحظات سريعة</span>
+                  </h3>
+                  <span className="text-[9px] text-gray-500 font-bold bg-white dark:bg-[#13131C] px-2 py-0.5 rounded border border-gray-100 dark:border-[#2D2D3D]">
+                    حفظ تلقائي 💾
+                  </span>
+                </div>
+                <div className="p-4">
+                  <textarea
+                    value={localQuickNotes}
+                    onChange={(e) => setLocalQuickNotes(e.target.value)}
+                    placeholder="اكتب أي ملاحظة سريعة أو تذكير لنفسك هنا أثناء مشاهدة الدرس... (يتم الحفظ تلقائياً في متصفحك)"
+                    className="w-full min-h-[150px] bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl p-3 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] transition-colors resize-y leading-relaxed font-bold"
+                    dir="rtl"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Widget 2: If teacher, show a beautiful Course Analytics Control Widget */}
+            {isTeacher && (
+              <div className="bg-white dark:bg-[#1A1A24] rounded-3xl shadow-sm border border-gray-200 dark:border-[#2D2D3D] flex flex-col p-5 space-y-4">
+                <h3 className="font-black text-sm text-gray-900 dark:text-white flex items-center gap-2 border-b border-gray-100 dark:border-[#2D2D3D] pb-3">
+                  <Sparkles className="w-4.5 h-4.5 text-[#00B4D8] dark:text-[#D4AF37] animate-pulse" />
+                  <span>لوحة تحكم المعلم السريعة</span>
+                </h3>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-50 dark:bg-[#0D0D12]/40 p-3 rounded-2xl text-center border border-transparent hover:border-[#00B4D8]/20 transition-all">
+                    <span className="block text-[9px] font-black text-gray-400 mb-0.5">إجمالي الطلاب</span>
+                    <span className="text-base font-black text-[#00B4D8] dark:text-[#D4AF37]">
+                      {course.enrolledStudents || 0} طالب
+                    </span>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-[#0D0D12]/40 p-3 rounded-2xl text-center border border-transparent hover:border-[#00B4D8]/20 transition-all">
+                    <span className="block text-[9px] font-black text-gray-400 mb-0.5">الدروس المرفوعة</span>
+                    <span className="text-base font-black text-gray-900 dark:text-white">
+                      {lessons.length} درس
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between text-xs font-bold text-gray-500">
+                    <span>مستوى المادة:</span>
+                    <span className="text-gray-900 dark:text-white">{course.subject} - {course.grade}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-bold text-gray-500">
+                    <span>سعر الاشتراك:</span>
+                    <span className="text-[#00B4D8] dark:text-[#D4AF37] font-black">{course.price === 0 ? "مجاني" : `${course.price} ج.م`}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-bold text-gray-500">
+                    <span>حالة الكورس:</span>
+                    <span className="bg-green-500/10 text-green-500 px-2 py-0.5 rounded text-[10px] font-black">نشط ومنشور</span>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => {
+                      toast.success('تم نسخ رابط الكورس لمشاركته مع طلابك! 🔗');
+                      navigator.clipboard.writeText(window.location.href);
+                    }}
+                    className="w-full bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 hover:bg-[#00B4D8] hover:text-white dark:hover:bg-[#D4AF37] dark:hover:text-gray-900 text-[#00B4D8] dark:text-[#D4AF37] py-2.5 px-4 rounded-xl font-black text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <span>مشاركة رابط الكورس</span>
+                  </button>
+                </div>
+              </div>
+            )}
+            
+          </div>
+        </div>
+
       </main>
 
       {/* Add Lesson Modal */}
@@ -1459,7 +2020,7 @@ export default function CourseDetails() {
                       onChange={(e) => setLessonDesc(e.target.value)}
                       placeholder="وصف مختصر للدرس وما سيتعلمه الطالب..."
                       rows={3}
-                      className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:bg-[#1A1A24] transition-colors resize-none"
+                      className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] transition-colors resize-none"
                     />
                   </div>
                 </form>
@@ -1470,7 +2031,7 @@ export default function CourseDetails() {
                   type="button"
                   onClick={() => setShowAddLesson(false)}
                   disabled={isSubmitting}
-                  className="px-6 py-3 rounded-xl font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#2D2D3D] transition-colors"
+                  className="px-6 py-3 rounded-xl font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#2D2D3D] transition-colors bg-transparent border-0"
                 >
                   إلغاء
                 </button>
@@ -1478,7 +2039,7 @@ export default function CourseDetails() {
                   type="submit"
                   form="add-lesson-form"
                   disabled={isSubmitting}
-                  className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:bg-[#B8860B] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:bg-[#B8860B] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 border-0"
                 >
                   {isSubmitting ? (
                     <>
@@ -1537,6 +2098,164 @@ export default function CourseDetails() {
                   className="bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-xl font-bold transition-colors flex-1 shadow-lg shadow-red-500/10"
                 >
                   نعم، احذف نهائياً
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Course Completion Rating Modal */}
+      <AnimatePresence>
+        {showCompletionRating && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowCompletionRating(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            
+            <motion.div
+              initial={{ scale: 0.95, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 20, opacity: 0 }}
+              className="bg-white dark:bg-[#1A1A24] w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl border border-gray-200 dark:border-[#2D2D3D] z-10 relative flex flex-col max-h-[90vh]"
+              dir="rtl"
+            >
+              {/* Top Banner Accent */}
+              <div className="h-2 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-400 shrink-0" />
+              
+              <div className="p-6 md:p-8 space-y-6 overflow-y-auto">
+                {/* Header */}
+                <div className="text-center space-y-2 relative">
+                  <button 
+                    onClick={() => setShowCompletionRating(false)}
+                    className="absolute top-0 left-0 p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-150 dark:hover:bg-[#2D2D3D] transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                  
+                  <div className="w-16 h-16 bg-yellow-500/10 text-yellow-500 rounded-full flex items-center justify-center mx-auto text-4xl mb-2 animate-bounce">
+                    🎓
+                  </div>
+                  <h3 className="font-black text-xl text-gray-900 dark:text-white">تقييم الكورس والأستاذ</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                    تهانينا على إتمام الكورس بنجاح! يسعدنا جداً معرفة رأيك حول المحتوى التعليمي وأداء الأستاذ المتميز.
+                  </p>
+                </div>
+
+                <div className="space-y-5">
+                  {/* Teacher Performance Rating */}
+                  <div className="bg-gray-50 dark:bg-[#222230] p-4 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-1.5">
+                        👨‍🏫 تقييم أداء الأستاذ:
+                      </span>
+                      <span className="text-xs font-bold text-amber-500 font-sans">
+                        {teacherRating} / 5
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1.5">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setTeacherRating(star)}
+                          className="focus:outline-none hover:scale-110 active:scale-95 transition-transform cursor-pointer bg-transparent border-0"
+                        >
+                          <Star className={`w-8 h-8 ${star <= teacherRating ? "fill-yellow-500 text-yellow-500" : "text-gray-300 dark:text-gray-650"}`} />
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-gray-400 text-center font-medium">
+                      (أسلوب الشرح، الاستجابة للأسئلة، وتوصيل المعلومة)
+                    </p>
+                  </div>
+
+                  {/* Educational Content Rating */}
+                  <div className="bg-gray-50 dark:bg-[#222230] p-4 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-1.5">
+                        📖 تقييم المحتوى التعليمي:
+                      </span>
+                      <span className="text-xs font-bold text-amber-500 font-sans">
+                        {contentRating} / 5
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center gap-1.5">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setContentRating(star)}
+                          className="focus:outline-none hover:scale-110 active:scale-95 transition-transform cursor-pointer bg-transparent border-0"
+                        >
+                          <Star className={`w-8 h-8 ${star <= contentRating ? "fill-yellow-500 text-yellow-500" : "text-gray-300 dark:text-gray-650"}`} />
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-gray-400 text-center font-medium">
+                      (تنظيم الحصص، جودة الفيديوهات، الاختبارات، والمذكرات)
+                    </p>
+                  </div>
+
+                  {/* Comments */}
+                  <div className="space-y-2">
+                    <span className="text-xs font-black text-gray-900 dark:text-white">
+                      رأيك الشخصي أو مقترحاتك للتحسين:
+                    </span>
+                    <textarea
+                      value={completionComment}
+                      onChange={(e) => setCompletionComment(e.target.value)}
+                      placeholder="اكتب انطباعك الصادق ومقترحاتك بكل حرية..."
+                      className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-2xl p-4 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-yellow-500 dark:focus:border-yellow-500 focus:bg-white dark:focus:bg-[#1A1A24] transition-colors resize-none leading-relaxed"
+                      rows={3}
+                    />
+                  </div>
+
+                  {/* Private Review Toggle */}
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none px-1">
+                    <input
+                      type="checkbox"
+                      checked={isCompletionReviewPrivate}
+                      onChange={(e) => setIsCompletionReviewPrivate(e.target.checked)}
+                      className="w-4 h-4 rounded text-yellow-500 focus:ring-yellow-500 border-gray-300 dark:border-[#2D2D3D] bg-white dark:bg-[#1A1A24]"
+                    />
+                    <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400">
+                      🔒 إرسال كتقييم خاص للأستاذ فقط (لن ينشر للعامة)
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-gray-50 dark:bg-[#15151F] px-6 py-4 border-t border-gray-150 dark:border-[#2D2D3D] flex items-center justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowCompletionRating(false)}
+                  className="px-5 py-2.5 rounded-xl border border-gray-200 dark:border-[#2D2D3D] hover:bg-gray-100 dark:hover:bg-[#222230] text-gray-700 dark:text-gray-300 text-xs font-black transition-colors cursor-pointer bg-transparent"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitCompletionRating}
+                  disabled={isSubmittingCompletionReview}
+                  className="bg-gradient-to-r from-yellow-500 to-amber-500 hover:opacity-95 text-white px-6 py-2.5 rounded-xl font-black text-xs shadow-md disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5 border-0"
+                >
+                  {isSubmittingCompletionReview ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>جاري إرسال التقييم...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 stroke-[3px]" />
+                      <span>حفظ وإرسال التقييم</span>
+                    </>
+                  )}
                 </button>
               </div>
             </motion.div>

@@ -7,10 +7,11 @@ import {
   GraduationCap, Book, AlertTriangle, FileText, Settings, Sparkles, 
   Hash, Award, FileCheck, Check, Activity, ShieldAlert,
   MapPin, School, PhoneCall, Layers, Clock, Search, Filter,
-  ArrowUpDown, SlidersHorizontal, RotateCcw
+  ArrowUpDown, SlidersHorizontal, RotateCcw, Archive
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
+import AdminVisualStats from './AdminVisualStats';
 
 const formatRegistrationDate = (createdAt: any) => {
   if (!createdAt) return '13/07/2026';
@@ -89,8 +90,10 @@ const getMockReportRecords = (role: string, rangeType: 'all' | 'month' | 'custom
 
 export default function AdminPanel() {
   const [users, setUsers] = useState<any[]>([]);
+  const [progressRecords, setProgressRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'students' | 'teachers' | 'parents'>('students');
+  const [studentStatusFilter, setStudentStatusFilter] = useState<'active' | 'archived'>('active');
 
   // Search and Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -129,9 +132,17 @@ export default function AdminPanel() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const querySnapshot = await getDocs(collection(db, 'users'));
+      // Fetch users and progress in parallel
+      const [usersSnap, progressSnap] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'course_progress')).catch(err => {
+          console.error("Error fetching course progress in background:", err);
+          return { docs: [] } as any;
+        })
+      ]);
+
       const usersData: any[] = [];
-      querySnapshot.forEach((document) => {
+      usersSnap.forEach((document) => {
         const data = document.data();
         let createdAt = data.createdAt;
         if (!createdAt) {
@@ -144,6 +155,12 @@ export default function AdminPanel() {
         usersData.push({ id: document.id, ...data, createdAt });
       });
       setUsers(usersData);
+
+      const progressData: any[] = [];
+      progressSnap.forEach((doc: any) => {
+        progressData.push({ id: doc.id, ...doc.data() });
+      });
+      setProgressRecords(progressData);
     } catch (error) {
       console.error("Error fetching users:", error);
       toast.error('حدث خطأ أثناء جلب البيانات');
@@ -212,6 +229,21 @@ export default function AdminPanel() {
     }
   };
 
+  const handleArchiveToggle = async (user: any, archive: boolean) => {
+    try {
+      await updateDoc(doc(db, 'users', user.id), { isArchived: archive });
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, isArchived: archive } : u));
+      if (archive) {
+        toast.success(`تم أرشفة الطالب ${user.name || ''} بنجاح`);
+      } else {
+        toast.success(`تم استعادة الطالب ${user.name || ''} بنجاح`);
+      }
+    } catch (error) {
+      console.error("Error toggling archive:", error);
+      toast.error('فشل تغيير حالة الأرشفة');
+    }
+  };
+
   const handleEditSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
@@ -242,7 +274,15 @@ export default function AdminPanel() {
 
   const filteredUsers = users
     .filter(u => {
-      if (activeTab === 'students') return u.role === 'student' || !u.role;
+      if (activeTab === 'students') {
+        const isStudent = u.role === 'student' || !u.role;
+        if (!isStudent) return false;
+        if (studentStatusFilter === 'active') {
+          return !u.isArchived;
+        } else {
+          return u.isArchived === true;
+        }
+      }
       if (activeTab === 'teachers') return u.role === 'teacher';
       if (activeTab === 'parents') return u.role === 'parent';
       return false;
@@ -345,6 +385,9 @@ export default function AdminPanel() {
         </div>
       </div>
 
+      {/* Visual Statistics Dashboard */}
+      <AdminVisualStats users={users} progressRecords={progressRecords} />
+
       {/* Main Table Container */}
       <div className="bg-white dark:bg-[#1A1A24] rounded-3xl p-6 border border-gray-200 dark:border-[#2D2D3D] shadow-sm">
         <div className="flex gap-4 border-b border-gray-100 dark:border-[#2D2D3D] pb-3 mb-6">
@@ -356,7 +399,7 @@ export default function AdminPanel() {
                 : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
             }`}
           >
-            الطلاب ({studentsCount})
+            الطلاب ({users.filter(u => (u.role === 'student' || !u.role) && !u.isArchived).length})
             {activeTab === 'students' && (
               <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
             )}
@@ -388,6 +431,34 @@ export default function AdminPanel() {
             )}
           </button>
         </div>
+
+        {/* Student Active / Archived Sub-tabs */}
+        {activeTab === 'students' && (
+          <div className="flex gap-2 mb-5 bg-gray-50/50 dark:bg-[#12121A]/30 p-1 rounded-xl border border-gray-150 dark:border-[#2D2D3D] w-full max-w-xs animate-in fade-in duration-200">
+            <button
+              onClick={() => setStudentStatusFilter('active')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                studentStatusFilter === 'active'
+                  ? 'bg-[#00B4D8] dark:bg-[#D4AF37] text-white dark:text-[#0D0D12] shadow-sm'
+                  : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              النشطين ({users.filter(u => (u.role === 'student' || !u.role) && !u.isArchived).length})
+            </button>
+            <button
+              onClick={() => setStudentStatusFilter('archived')}
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                studentStatusFilter === 'archived'
+                  ? 'bg-amber-500 text-white shadow-sm'
+                  : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+              }`}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              المؤرشفين ({users.filter(u => (u.role === 'student' || !u.role) && u.isArchived).length})
+            </button>
+          </div>
+        )}
 
         {/* Search and Filters Section */}
         <div className="bg-gray-50/50 dark:bg-[#0D0D12]/30 p-4 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] mb-6 flex flex-col gap-4 animate-in fade-in duration-200">
@@ -530,17 +601,17 @@ export default function AdminPanel() {
             <Loader2 className="w-8 h-8 text-[#00B4D8] dark:text-[#D4AF37] animate-spin" />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-right border-collapse">
-              <thead>
+          <div className="overflow-auto max-h-[600px] relative rounded-2xl border border-gray-100 dark:border-[#2D2D3D]/50 scrollbar-thin">
+            <table className="w-full min-w-[850px] text-right border-collapse relative">
+              <thead className="sticky top-0 z-20 bg-white dark:bg-[#1A1A24]">
                 <tr className="border-b border-gray-100 dark:border-[#2D2D3D]">
-                  <th className="pb-4 text-sm font-black text-gray-400">الاسم والبيانات</th>
-                  <th className="pb-4 text-sm font-black text-gray-400">البريد الإلكتروني</th>
-                  <th className="pb-4 text-sm font-black text-gray-400">رقم الهاتف</th>
-                  {activeTab === 'students' && <th className="pb-4 text-sm font-black text-gray-400">الصف الدراسي</th>}
-                  {activeTab === 'teachers' && <th className="pb-4 text-sm font-black text-gray-400">المادة</th>}
-                  <th className="pb-4 text-sm font-black text-gray-400">تاريخ التسجيل</th>
-                  <th className="pb-4 text-sm font-black text-gray-400 text-center">التحكم والعمليات</th>
+                  <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">الاسم والبيانات</th>
+                  <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">البريد الإلكتروني</th>
+                  <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">رقم الهاتف</th>
+                  {activeTab === 'students' && <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">الصف الدراسي</th>}
+                  {activeTab === 'teachers' && <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">المادة</th>}
+                  <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">تاريخ التسجيل</th>
+                  <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-center shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">التحكم والعمليات</th>
                 </tr>
               </thead>
               <tbody>
@@ -576,58 +647,58 @@ export default function AdminPanel() {
                   filteredUsers.map((user) => (
                   <tr key={user.id} className="border-b border-gray-50 dark:border-[#2D2D3D]/50 hover:bg-gray-50 dark:hover:bg-[#0D0D12] transition-colors">
                     {/* Beautiful styled user avatar and name */}
-                    <td className="py-4 font-bold text-gray-900 dark:text-white text-sm">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm text-white shadow-sm shrink-0 ${
-                          user.role === 'teacher' ? 'bg-purple-500' : user.role === 'parent' ? 'bg-amber-500' : 'bg-[#00B4D8]'
+                    <td className="py-2.5 px-4 font-bold text-gray-900 dark:text-white text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-8.5 h-8.5 rounded-xl flex items-center justify-center font-black text-xs text-white shadow-sm shrink-0 ${
+                          user.role === 'teacher' ? 'bg-purple-500' : user.role === 'parent' ? 'bg-amber-500' : user.role === 'admin' ? 'bg-red-500' : 'bg-[#00B4D8]'
                         }`}>
                           {(user.name || 'ب').charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <span className="block font-black text-gray-900 dark:text-white text-base">{user.name || 'بدون اسم'}</span>
-                          <span className="block text-xs font-bold text-gray-400 mt-0.5 md:hidden">{user.email}</span>
+                          <span className="block font-black text-gray-900 dark:text-white text-sm">{user.name || 'بدون اسم'}</span>
+                          <span className="block text-[10px] font-bold text-gray-400 mt-0.5 md:hidden">{user.email}</span>
                         </div>
                       </div>
                     </td>
-                    <td className="py-4 text-sm font-bold text-gray-600 dark:text-gray-400">{user.email}</td>
-                    <td className="py-4 text-sm font-bold text-gray-600 dark:text-gray-400" dir="ltr">{user.phone || '-'}</td>
+                    <td className="py-2.5 px-4 text-xs font-bold text-gray-600 dark:text-gray-400">{user.email}</td>
+                    <td className="py-2.5 px-4 text-xs font-bold text-gray-600 dark:text-gray-400" dir="ltr">{user.phone || '-'}</td>
                     
                     {/* Modern pill styled attributes */}
                     {activeTab === 'students' && (
-                      <td className="py-4">
-                        <span className="bg-blue-50 text-[#00B4D8] dark:bg-blue-950/40 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50 py-1 px-3 rounded-xl text-xs font-black inline-block">
+                      <td className="py-2.5 px-4">
+                        <span className="bg-blue-50 text-[#00B4D8] dark:bg-blue-950/40 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50 py-0.5 px-2.5 rounded-lg text-[11px] font-black inline-block">
                           {user.grade || '-'}
                         </span>
                       </td>
                     )}
                     {activeTab === 'teachers' && (
-                      <td className="py-4">
-                        <span className="bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400 border border-purple-100 dark:border-purple-900/50 py-1 px-3 rounded-xl text-xs font-black inline-block">
+                      <td className="py-2.5 px-4">
+                        <span className="bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400 border border-purple-100 dark:border-purple-900/50 py-0.5 px-2.5 rounded-lg text-[11px] font-black inline-block">
                           {user.subject || '-'}
                         </span>
                       </td>
                     )}
                     
-                    <td className="py-4">
+                    <td className="py-2.5 px-4">
                       <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-bold">
-                        <Calendar className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                        <span>{formatRegistrationDate(user.createdAt)}</span>
+                        <Calendar className="w-3 h-3 text-gray-400 shrink-0" />
+                        <span className="text-[11px]">{formatRegistrationDate(user.createdAt)}</span>
                       </div>
                     </td>
 
                     {/* Action buttons */}
-                    <td className="py-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
+                    <td className="py-2.5 px-4 text-center">
+                      <div className="flex items-center justify-center gap-1">
                         <button 
                           onClick={() => {
                             setSelectedUser(user);
                             setShowModalPassword(false);
                             setViewModalOpen(true);
                           }}
-                          className="p-2.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-colors"
+                          className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
                           title="عرض البيانات الشاملة"
                         >
-                          <Eye className="w-4.5 h-4.5" />
+                          <Eye className="w-4 h-4" />
                         </button>
                         <button 
                           onClick={() => {
@@ -635,10 +706,10 @@ export default function AdminPanel() {
                             setEditFormData(user);
                             setEditModalOpen(true);
                           }}
-                          className="p-2.5 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-xl transition-colors"
+                          className="p-1.5 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
                           title="تعديل الحساب"
                         >
-                          <Edit2 className="w-4.5 h-4.5" />
+                          <Edit2 className="w-4 h-4" />
                         </button>
                         <button 
                           onClick={() => {
@@ -650,18 +721,49 @@ export default function AdminPanel() {
                             );
                             setPrintModalOpen(true);
                           }}
-                          className="p-2.5 text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-xl transition-colors"
+                          className="p-1.5 text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
                           title="معاينة وطباعة تقرير رسمي"
                         >
-                          <Printer className="w-4.5 h-4.5" />
+                          <Printer className="w-4 h-4" />
                         </button>
-                        <button 
-                          onClick={() => confirmDelete(user.id)}
-                          className="p-2.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
-                          title="حذف الحساب نهائياً"
-                        >
-                          <Trash2 className="w-4.5 h-4.5" />
-                        </button>
+                        {(user.role === 'student' || !user.role) ? (
+                          <>
+                            {!user.isArchived ? (
+                              <button 
+                                onClick={() => handleArchiveToggle(user, true)}
+                                className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors animate-in fade-in zoom-in duration-200"
+                                title="أرشفة حساب الطالب"
+                              >
+                                <Archive className="w-4 h-4" />
+                              </button>
+                            ) : (
+                              <>
+                                <button 
+                                  onClick={() => handleArchiveToggle(user, false)}
+                                  className="p-1.5 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors animate-in fade-in zoom-in duration-200"
+                                  title="استعادة حساب الطالب"
+                                >
+                                  <RotateCcw className="w-4 h-4" />
+                                </button>
+                                <button 
+                                  onClick={() => confirmDelete(user.id)}
+                                  className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors animate-in fade-in zoom-in duration-200"
+                                  title="حذف الحساب نهائياً من الأرشيف"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          <button 
+                            onClick={() => confirmDelete(user.id)}
+                            className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                            title="حذف الحساب نهائياً"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1315,7 +1417,7 @@ export default function AdminPanel() {
 
       {/* Actual Pure Print Layout (Hidden on screen, shown ONLY on print) */}
       {printModalOpen && selectedUser && (
-        <div className="hidden print:block bg-white text-black min-h-screen w-full p-12 relative" dir="rtl">
+        <div className="hidden print:block bg-white text-black min-h-screen w-full p-12 relative printable-area" dir="rtl">
           
           {/* Header Banner */}
           <div className="flex justify-between items-start border-b-2 border-black pb-4 mb-6">

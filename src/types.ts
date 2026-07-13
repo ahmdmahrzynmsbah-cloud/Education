@@ -3,6 +3,7 @@ export interface User {
   name: string;
   phone: string;
   role: 'student' | 'teacher' | 'parent' | 'admin';
+  email?: string;
   governorate?: string;
   school?: string;
   grade?: string;
@@ -79,9 +80,21 @@ export interface Review {
   userId: string;
   userName: string;
   rating: number;
+  teacherRating?: number;
+  contentRating?: number;
   comment: string;
   createdAt: string;
   isPrivate?: boolean;
+  likesCount?: number;
+  likedUserIds?: string[];
+  replies?: {
+    id: string;
+    userId: string;
+    userName: string;
+    userRole?: string;
+    comment: string;
+    createdAt: string;
+  }[];
 }
 
 export interface LessonNote {

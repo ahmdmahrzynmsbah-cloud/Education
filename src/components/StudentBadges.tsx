@@ -21,6 +21,7 @@ interface Badge {
 export default function StudentBadges({ userData }: StudentBadgesProps) {
   const [badges, setBadges] = useState<Badge[]>([]);
   const [loading, setLoading] = useState(true);
+  const [animatingId, setAnimatingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userData?.id || userData.role !== 'student') return;
@@ -92,6 +93,11 @@ export default function StudentBadges({ userData }: StudentBadgesProps) {
       origin: { y: 0.6 },
       colors: ['#D4AF37', '#00B4D8', '#FFD700', '#FFFFFF']
     });
+
+    setAnimatingId(null);
+    setTimeout(() => {
+      setAnimatingId(badge.id);
+    }, 10);
   };
 
   if (loading) {
@@ -133,13 +139,24 @@ export default function StudentBadges({ userData }: StudentBadgesProps) {
             onClick={() => handleBadgeClick(badge)}
             className="cursor-pointer relative group flex flex-col items-center gap-2 w-28"
           >
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-yellow-300 to-yellow-600 dark:from-[#D4AF37] dark:to-yellow-700 p-1 shadow-lg shadow-yellow-500/30 flex items-center justify-center relative">
+            <motion.div
+              animate={animatingId === badge.id ? {
+                scale: [1, 1.25, 0.9, 1.15, 1],
+                rotate: [0, 180, 360],
+              } : { scale: 1, rotate: 0 }}
+              transition={{ duration: 0.8, ease: "easeInOut" }}
+              onAnimationComplete={() => {
+                if (animatingId === badge.id) {
+                  setAnimatingId(null);
+                }
+              }}
+              className="w-20 h-20 rounded-full bg-gradient-to-br from-yellow-300 to-yellow-600 dark:from-[#D4AF37] dark:to-yellow-700 p-1 shadow-lg shadow-yellow-500/30 flex items-center justify-center relative"
+            >
               <div className="absolute inset-0 rounded-full bg-white/20 blur-sm group-hover:bg-white/40 transition-colors"></div>
               <div className="w-full h-full bg-[#1A1A24] rounded-full flex items-center justify-center relative z-10 overflow-hidden border-2 border-yellow-200 dark:border-yellow-500">
                 <Medal className="w-8 h-8 text-yellow-400" />
-                <Sparkles className="absolute top-2 right-2 w-3 h-3 text-white opacity-70 animate-pulse" />
               </div>
-            </div>
+            </motion.div>
             
             <div className="text-center">
               <p className="text-[10px] font-black text-gray-800 dark:text-gray-200 leading-tight line-clamp-2">
