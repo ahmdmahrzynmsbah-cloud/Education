@@ -57,7 +57,7 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState(['', '']);
   
-  const [showWhiteboard, setShowWhiteboard] = useState(false);
+  const isWhiteboardActive = activeStream?.isWhiteboardActive || false;
   
   // Whiteboard drawing state
   const [whiteboardColor, setWhiteboardColor] = useState('#00B4D8');
@@ -72,10 +72,6 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const lastVoiceBroadcastTimeRef = useRef<string | null>(null);
-  const [customVoiceText, setCustomVoiceText] = useState('');
-  const [isBroadcastingVoice, setIsBroadcastingVoice] = useState(false);
 
   const isTeacher = userData?.role === 'teacher';
 
@@ -261,48 +257,6 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
     }
   };
 
-  const speakArabicText = (text: string) => {
-    if (!('speechSynthesis' in window)) return;
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'ar-EG';
-      
-      const voices = window.speechSynthesis.getVoices();
-      const arabicVoice = voices.find(v => v.lang.startsWith('ar') || v.lang.includes('ar'));
-      if (arabicVoice) {
-        utterance.voice = arabicVoice;
-      }
-      utterance.rate = 0.95;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-      window.speechSynthesis.speak(utterance);
-    } catch (err) {
-      console.error("Error speaking text: ", err);
-    }
-  };
-
-  const handleVoiceBroadcast = async (text: string) => {
-    if (!activeStream || !text.trim()) return;
-    setIsBroadcastingVoice(true);
-    try {
-      await updateDoc(doc(db, 'live_streams', activeStream.id), {
-        voiceBroadcastText: text.trim(),
-        voiceBroadcastTime: new Date().toISOString()
-      });
-      // Speak locally too so the teacher can hear it
-      speakArabicText(text.trim());
-      toast.success("تم بث الرسالة الصوتية بنجاح لجميع الطلاب! 🔊📡", {
-        icon: '🔊'
-      });
-      setCustomVoiceText('');
-    } catch (err) {
-      console.error("Error broadcasting voice: ", err);
-      toast.error("فشل بث الرسالة الصوتية.");
-    } finally {
-      setIsBroadcastingVoice(false);
-    }
-  };
 
   // 1. Fetch live streams and courses
   useEffect(() => {
@@ -524,6 +478,18 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
     await startCamera(); // Switch back to camera
   };
 
+  const toggleWhiteboard = async () => {
+    if (!isTeacher || !activeStream) return;
+    try {
+      await updateDoc(doc(db, 'live_streams', activeStream.id), {
+        isWhiteboardActive: !isWhiteboardActive
+      });
+    } catch (err) {
+      console.error("Failed to toggle whiteboard: ", err);
+      toast.error("حدث خطأ أثناء فتح/إغلاق الصبورة");
+    }
+  };
+
   // 3. Create a Live Stream (Teacher)
   const handleCreateStream = async () => {
     if (!newTitle.trim() || !newDescription.trim() || !selectedCourseId) {
@@ -732,11 +698,6 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
           drawFromWhiteboardData(data.whiteboardData);
         }
 
-        // Handle real-time audio/voice broadcast for student
-        if (!isTeacher && data.voiceBroadcastText && data.voiceBroadcastTime && data.voiceBroadcastTime !== lastVoiceBroadcastTimeRef.current) {
-          lastVoiceBroadcastTimeRef.current = data.voiceBroadcastTime;
-          speakArabicText(data.voiceBroadcastText);
-        }
       }
     });
 
@@ -1340,7 +1301,7 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
                   />
                 ) : activeStream.status === 'live' ? (
                   /* GORGEOUS VIRTUAL STREAMING STUDIO FALLBACK */
-                  <div className="absolute inset-0 bg-gradient-to-br from-[#0F0F1A] via-[#09090F] to-black flex flex-col items-center justify-center p-6 text-center select-none overflow-hidden relative" dir="rtl">
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#0F0F1A] via-[#09090F] to-black flex flex-col items-center justify-center p-6 text-center select-none overflow-hidden" dir="rtl">
                     {/* Glowing dynamic background grid or radar rings */}
                     <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(#3B82F6_1px,transparent_1px)] [background-size:20px_20px] dark:bg-[radial-gradient(#D4AF37_1px,transparent_1px)]" />
                     
@@ -1492,14 +1453,16 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowWhiteboard(!showWhiteboard)}
-                      className={`p-2 rounded-xl transition-all active:scale-95 text-white cursor-pointer flex items-center gap-1 border ${showWhiteboard ? 'bg-indigo-500/50 border-indigo-400' : 'bg-white/10 hover:bg-white/20 border-white/5'}`}
-                      title="الصبورة الذكية"
-                    >
-                      <span className="text-[10px] font-black hidden sm:inline text-indigo-400">الصبورة الذكية</span>
-                      <Palette className="w-4 h-4 text-indigo-400" />
-                    </button>
+                    {isTeacher && (
+                      <button
+                        onClick={toggleWhiteboard}
+                        className={`p-2 rounded-xl transition-all active:scale-95 text-white cursor-pointer flex items-center gap-1 border ${isWhiteboardActive ? 'bg-indigo-500/50 border-indigo-400' : 'bg-white/10 hover:bg-white/20 border-white/5'}`}
+                        title="الصبورة الذكية"
+                      >
+                        <span className="text-[10px] font-black hidden sm:inline text-indigo-400">الصبورة الذكية</span>
+                        <Palette className="w-4 h-4 text-indigo-400" />
+                      </button>
+                    )}
                     
                     <button
                       onClick={() => setIsMaximizedVideo(!isMaximizedVideo)}
@@ -1512,11 +1475,11 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
                 </div>
                 
                 {/* Smart Whiteboard Overlay */}
-                {showWhiteboard && activeStream && (
+                {isWhiteboardActive && activeStream && (
                   <SmartWhiteboard 
                     streamId={activeStream.id} 
                     isTeacher={isTeacher} 
-                    onClose={() => setShowWhiteboard(false)} 
+                    onClose={toggleWhiteboard} 
                   />
                 )}
               </div>
@@ -1678,111 +1641,6 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
                 </div>
               )}
 
-              {/* Student Live Audio Controller */}
-              {!isTeacher && activeStream.status === 'live' && (
-                <div className="bg-white dark:bg-[#12121A] rounded-3xl p-6 border border-gray-100 dark:border-[#1E1E2F] space-y-4 text-right animate-none" dir="rtl">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#00B4D8] to-indigo-500 dark:from-[#D4AF37] dark:to-amber-500 flex items-center justify-center text-white shadow-md">
-                        <Volume2 className="w-5 h-5 animate-pulse" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-black text-gray-900 dark:text-white">إعدادات الصوت والبث الصوتي المباشر 🔊</h3>
-                        <p className="text-[10px] text-gray-400 font-bold mt-0.5">
-                          تأكد من تفعيل جودة الصوت والتحقق من سماع صوت الشرح الفوري من الأستاذ في البث.
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        speakArabicText("أهلاً بك يا بطل في منصة Teachland! الصوت يعمل الآن في متصفحك بشكل ممتاز وواضح تماماً.");
-                        toast.success("تم تشغيل اختبار الصوت بنجاح! هل سمعت النطق بوضوح؟ 🎧🔊");
-                      }}
-                      className="px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-500 dark:text-indigo-400 rounded-xl text-[10px] font-black transition-all cursor-pointer flex items-center gap-1.5 self-start sm:self-auto border border-indigo-500/10"
-                    >
-                      <Volume2 className="w-3.5 h-3.5" />
-                      تجربة واختبار الصوت 🎧
-                    </button>
-                  </div>
-
-                  <div className="p-3.5 bg-gray-50 dark:bg-[#1A1A26] rounded-2xl border border-gray-100 dark:border-gray-800 flex items-center justify-between text-xs font-bold text-gray-600 dark:text-gray-300">
-                    <div className="flex items-center gap-2">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                      </span>
-                      <span>حالة الصوت التفاعلي: <span className="text-green-500 font-black">مفعل ونشط تلقائياً ✓</span></span>
-                    </div>
-                    <span className="text-[9px] text-gray-400">نظام نطق Teachland للتعلم الذكي</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Teacher Voice Broadcaster Control Panel */}
-              {isTeacher && activeStream.status === 'live' && (
-                <div className="bg-white dark:bg-[#12121A] rounded-3xl p-6 border-2 border-indigo-500/20 dark:border-[#D4AF37]/20 space-y-5 text-right relative overflow-hidden animate-none" dir="rtl">
-                  <div className="absolute top-0 left-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
-                  
-                  <div className="border-b border-gray-50 dark:border-gray-900 pb-3 relative z-10">
-                    <h3 className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-2">
-                      <Volume2 className="w-5 h-5 text-indigo-500 dark:text-[#D4AF37] animate-pulse" />
-                      بث رسائل صوتية ذكية للطلاب 🔊🎙️
-                    </h3>
-                    <p className="text-[10px] text-gray-400 font-bold mt-0.5">
-                      اكتب أي رسالة دراسية أو تشجيعية، ليقوم محرك Teachland الذكي بنطقها باللغة العربية الفصحى فوراً لجميع الطلاب في البث المباشر بصوت واضح جداً!
-                    </p>
-                  </div>
-
-                  {/* Quick Shouts / Praise Phrases */}
-                  <div className="space-y-2 relative z-10">
-                    <span className="text-[10px] font-black text-gray-400">⚡ عبارات توجيهية وتشجيعية سريعة للبث بنقرة واحدة:</span>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "رائع جداً يا أبطال، استمروا في التميز والتركيز! 🌟",
-                        "انتبهوا جيداً لهذه الجزئية، فهي تأتي دائماً في الامتحانات 📝",
-                        "هل لديكم أي سؤال بخصوص هذه القاعدة قبل الانتقال للنقطة التالية؟ ❓",
-                        "أحسنتم جميعاً! فخور جداً بتفاعلكم وإجاباتكم الذكية اليوم 👏🎉"
-                      ].map((phrase, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleVoiceBroadcast(phrase)}
-                          disabled={isBroadcastingVoice}
-                          className="px-3 py-1.5 bg-gray-50 hover:bg-indigo-50 dark:bg-[#1A1A26] dark:hover:bg-[#222235] text-[10px] font-black text-gray-700 dark:text-gray-300 rounded-xl border border-gray-100 dark:border-gray-800 transition-all hover:border-indigo-200 dark:hover:border-[#D4AF37]/50 text-right cursor-pointer"
-                        >
-                          {phrase}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Custom Speech Area */}
-                  <div className="space-y-3 relative z-10">
-                    <div className="relative">
-                      <textarea
-                        value={customVoiceText}
-                        onChange={(e) => setCustomVoiceText(e.target.value)}
-                        placeholder="اكتب هنا أي فكرة شرح، معادلة، أو تنبيه تريده أن ينطق لجميع الطلاب فوراً وبأعلى جودة..."
-                        maxLength={150}
-                        rows={2}
-                        className="w-full px-4 py-3 bg-gray-50 dark:bg-[#1A1A26] border border-gray-100 dark:border-gray-800 rounded-2xl text-xs font-bold text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-right resize-none"
-                      />
-                      <span className="absolute left-3 bottom-3 text-[9px] text-gray-400 font-bold">
-                        {customVoiceText.length}/150
-                      </span>
-                    </div>
-
-                    <button
-                      onClick={() => handleVoiceBroadcast(customVoiceText)}
-                      disabled={isBroadcastingVoice || !customVoiceText.trim()}
-                      className="w-full py-3 bg-gradient-to-r from-indigo-600 to-[#00B4D8] dark:from-indigo-600 dark:to-[#D4AF37] disabled:opacity-50 text-white rounded-2xl text-xs font-black flex items-center justify-center gap-2 transition-all shadow-md hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-                    >
-                      <Volume2 className="w-4 h-4 animate-bounce" />
-                      {isBroadcastingVoice ? "جاري البث الصوتي..." : "بث الشرح الصوتي المباشر للطلاب الآن 📡🔊"}
-                    </button>
-                  </div>
-                </div>
-              )}
 
               {/* Title & Description under video */}
               <div className="bg-white dark:bg-[#12121A] rounded-3xl p-6 border border-gray-100 dark:border-[#1E1E2F] space-y-3">

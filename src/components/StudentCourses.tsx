@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { BookOpen, Users, ImageIcon, Search, Filter, Star } from 'lucide-react';
 import { collection, query, getDocs, where, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -17,6 +17,14 @@ export default function StudentCourses({ userData }: StudentCoursesProps) {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const subjectParam = searchParams.get('subject');
+    if (subjectParam) {
+      setSelectedSubject(subjectParam);
+    }
+  }, [searchParams]);
 
   const fetchCourses = async () => {
     try {
@@ -211,6 +219,7 @@ export default function StudentCourses({ userData }: StudentCoursesProps) {
                     <img 
                       src={course.imageUrl} 
                       alt={course.title} 
+                      loading="lazy"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=800&auto=format&fit=crop';

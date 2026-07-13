@@ -2,7 +2,7 @@ import React from "react";
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Play, HelpCircle, Lock, BookOpen, Star, MessageCircleQuestion, CheckCircle, Ticket, LogOut, Trophy, Flame, Bell, Target, ArrowLeft, Video, Bot, Users, Activity, User as UserIcon, Wallet, ArrowUpRight, ArrowDownLeft, Smartphone, CreditCard, PiggyBank, RefreshCw, Send, Sparkles, Loader2, DollarSign, Check, History, Award, Edit2, Edit3, Save, X, Clock, Trash2, Plus , Shield } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, Toaster } from 'react-hot-toast';
 import ThemeToggle from './ThemeToggle';
 import AdminPanel from './AdminPanel';
@@ -16,7 +16,6 @@ import StudentCourses from './StudentCourses';
 import StudentBadges from './StudentBadges';
 import FAQSection from "./FAQSection";
 import ProfileSection from "./ProfileSection";
-import SmartAssistant from './SmartAssistant';
 import ComprehensiveExamBuilder from './ComprehensiveExamBuilder';
 import StudentExamTaking from './StudentExamTaking';
 import InteractiveSchedule from './InteractiveSchedule';
@@ -40,6 +39,14 @@ const MOCK_PARENT_STATS = [
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('home');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabQuery = searchParams.get('tab');
+
+  useEffect(() => {
+    if (tabQuery) {
+      setActiveTab(tabQuery);
+    }
+  }, [tabQuery]);
   const [activationStatus, setActivationStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [code, setCode] = useState('');
   const [userData, setUserData] = useState<any>(null);
@@ -121,6 +128,8 @@ export default function Dashboard() {
   const [miniNoteCourseId, setMiniNoteCourseId] = useState('general');
   const [savingMiniNote, setSavingMiniNote] = useState(false);
   const [subscribingLeague, setSubscribingLeague] = useState(false);
+
+
 
   useEffect(() => {
     if (!userData?.id || userData.role !== 'student') return;
@@ -1288,7 +1297,6 @@ export default function Dashboard() {
             { id: 'quizzes', label: 'الاختبارات', icon: Award },
             { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
             { id: 'live', label: 'حصص لايف', icon: Video },
-            { id: 'ai', label: 'المساعد الذكي', icon: Bot },
             { id: 'notes', label: 'الملاحظات السريعة', icon: Edit2 },
 
             { id: 'wallet', label: 'المحفظة', icon: Ticket },
@@ -1803,17 +1811,6 @@ export default function Dashboard() {
                 </div>
                 <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">قريباً</h2>
                 <p className="font-medium text-sm">يتم تجهيز هذا القسم ليواكب أحدث التعديلات</p>
-              </motion.div>
-            )}
-
-            {activeTab === 'ai' && (
-              <motion.div
-                key="ai"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-              >
-                <SmartAssistant userData={userData} />
               </motion.div>
             )}
 
@@ -3050,11 +3047,6 @@ export default function Dashboard() {
           </AnimatePresence>
         </div>
       </main>
-      
-      {/* Floating Support Button */}
-      <button className="fixed bottom-20 md:bottom-6 left-6 w-14 h-14 bg-[#25D366] rounded-full flex items-center justify-center text-white shadow-lg shadow-[#25D366]/20 hover:-translate-y-1 transition-transform z-50">
-        <MessageCircleQuestion className="w-6 h-6" />
-      </button>
 
       {/* Mobile Navigation */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#1A1A24] border-t border-gray-200 dark:border-[#2D2D3D] flex justify-around p-3 z-40 pb-safe">

@@ -29,6 +29,7 @@ export interface Course {
   views?: number;
   enrolledStudents: number;
   enrolledStudentIds?: string[];
+  suspendedStudentIds?: string[];
   lessonsCount: number;
   isActive?: boolean;
   status?: 'published' | 'draft' | 'under_review';
@@ -194,6 +195,7 @@ export interface LiveStream {
   materials?: LiveMaterial[];
   isScreenSharing?: boolean;
   sharedScreenType?: 'presentation' | 'code' | 'whiteboard';
+  isWhiteboardActive?: boolean;
   activeSlideIndex?: number;
   voiceBroadcastText?: string;
   voiceBroadcastTime?: string;

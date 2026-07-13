@@ -633,6 +633,7 @@ export default function CourseDetails() {
 
   const isTeacher = userData?.id === course.teacherId;
   const isEnrolled = course.enrolledStudentIds?.includes(userData?.id || "");
+  const isSuspended = course.suspendedStudentIds?.includes(userData?.id || "");
   const canWatch = isTeacher || isEnrolled || userData?.role === "admin";
 
   const saveVideoProgressToFirestore = async (lessonId: string, currentTime: number, duration: number) => {
@@ -811,6 +812,10 @@ export default function CourseDetails() {
 
   const handleEnroll = async () => {
     if (!userData || !course || enrolling) return;
+    if (isSuspended) {
+      toast.error("تم إيقاف اشتراكك في هذا الكورس من قبل المعلم");
+      return;
+    }
     setEnrolling(true);
     try {
       await updateDoc(doc(db, "courses", course.id), {
@@ -919,13 +924,15 @@ export default function CourseDetails() {
                 <div className="w-full h-full absolute inset-0 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 bg-gray-900 p-8 text-center">
                   <Lock className="w-16 h-16 mb-4 opacity-50 text-[#00B4D8] dark:text-[#D4AF37]" />
                   <h2 className="text-2xl font-black text-white mb-2">هذا الكورس مغلق</h2>
-                  <p className="font-medium text-lg mb-6 text-gray-300">يجب عليك التسجيل في الكورس لتتمكن من مشاهدة الدروس</p>
+                  <p className="font-medium text-lg mb-6 text-gray-300">
+                    {isSuspended ? 'لقد تم إيقاف وصولك إلى هذا الكورس من قبل المعلم' : 'يجب عليك التسجيل في الكورس لتتمكن من مشاهدة الدروس'}
+                  </p>
                   <button 
                     onClick={handleEnroll}
-                    disabled={enrolling}
-                    className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-8 py-3 rounded-xl font-bold text-lg hover:bg-[#0077B6] dark:hover:bg-[#B8860B] transition-colors disabled:opacity-50 cursor-pointer"
+                    disabled={enrolling || isSuspended}
+                    className={`px-8 py-3 rounded-xl font-bold text-lg transition-colors cursor-pointer ${isSuspended ? 'bg-red-500/20 text-red-500 cursor-not-allowed' : 'bg-[#00B4D8] dark:bg-[#D4AF37] text-white hover:bg-[#0077B6] dark:hover:bg-[#B8860B] disabled:opacity-50'}`}
                   >
-                    {enrolling ? 'جاري التسجيل...' : 'اشترك الآن مجاناً'}
+                    {isSuspended ? 'الوصول موقوف' : enrolling ? 'جاري التسجيل...' : 'اشترك الآن مجاناً'}
                   </button>
                 </div>
               ) : activeLesson ? (

@@ -2,7 +2,8 @@ import { useState, useEffect, FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowRight, BookOpen, GraduationCap, Play, Star, Users, Trophy, Award, ChevronDown, CheckCircle2, 
-  Sparkles, Mail, Send, CheckCircle, ArrowUpRight, Shield, Heart, Zap, Phone, MapPin, MessageSquare
+  Sparkles, Mail, Send, CheckCircle, ArrowUpRight, Shield, Heart, Zap, Phone, MapPin, MessageSquare,
+  Calculator, FlaskConical, Dna, Languages, BookOpenText, Scroll, Globe, X
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
@@ -18,6 +19,11 @@ export default function LandingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
+
+  // Subject Browser States
+  const [selectedLandingSubject, setSelectedLandingSubject] = useState<string | null>(null);
+  const [subjectCourses, setSubjectCourses] = useState<any[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(false);
 
   // Legal and Help Modals State
   const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | 'copyright' | 'support' | null>(null);
@@ -86,6 +92,33 @@ export default function LandingPage() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const fetchSubjectCourses = async () => {
+      if (!selectedLandingSubject) {
+        setSubjectCourses([]);
+        return;
+      }
+      setLoadingCourses(true);
+      try {
+        const q = query(
+          collection(db, 'courses'),
+          where('subject', '==', selectedLandingSubject)
+        );
+        const snapshot = await getDocs(q);
+        const list = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setSubjectCourses(list);
+      } catch (err) {
+        console.error("Error fetching courses for subject:", err);
+      } finally {
+        setLoadingCourses(false);
+      }
+    };
+    fetchSubjectCourses();
+  }, [selectedLandingSubject]);
 
   const faqs = [
     {
@@ -378,28 +411,33 @@ export default function LandingPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
             {[
-              { title: 'الرياضيات', icon: '➗', color: 'bg-blue-100 text-blue-600 border-blue-200' },
-              { title: 'الفيزياء', icon: '⚡', color: 'bg-yellow-100 text-yellow-600 border-yellow-200' },
-              { title: 'الكيمياء', icon: '🧪', color: 'bg-purple-100 text-purple-600 border-purple-200' },
-              { title: 'الأحياء', icon: '🧬', color: 'bg-green-100 text-green-600 border-green-200' },
-              { title: 'اللغة العربية', icon: '📖', color: 'bg-red-100 text-red-600 border-red-200' },
-              { title: 'اللغة الإنجليزية', icon: '🔤', color: 'bg-indigo-100 text-indigo-600 border-indigo-200' },
-              { title: 'التاريخ', icon: '🏛️', color: 'bg-orange-100 text-orange-600 border-orange-200' },
-              { title: 'الجغرافيا', icon: '🌍', color: 'bg-teal-100 text-teal-600 border-teal-200' }
+              { title: 'الرياضيات', icon: Calculator, color: 'bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400' },
+              { title: 'الفيزياء', icon: Zap, color: 'bg-yellow-100 text-yellow-600 dark:bg-yellow-500/10 dark:text-yellow-400' },
+              { title: 'الكيمياء', icon: FlaskConical, color: 'bg-purple-100 text-purple-600 dark:bg-purple-500/10 dark:text-purple-400' },
+              { title: 'الأحياء', icon: Dna, color: 'bg-green-100 text-green-600 dark:bg-green-500/10 dark:text-green-400' },
+              { title: 'اللغة العربية', icon: Languages, color: 'bg-red-100 text-red-600 dark:bg-red-500/10 dark:text-red-400' },
+              { title: 'اللغة الإنجليزية', icon: BookOpenText, color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400' },
+              { title: 'التاريخ', icon: Scroll, color: 'bg-orange-100 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400' },
+              { title: 'الجغرافيا', icon: Globe, color: 'bg-teal-100 text-teal-600 dark:bg-teal-500/10 dark:text-teal-400' }
             ].map((subject, i) => (
-              <motion.div
+              <div
                 key={i}
-                initial={{ opacity: 0, y: 15 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.04 }}
-                className="bg-white dark:bg-[#1A1A24] rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-gray-200 dark:border-[#2D2D3D] hover:border-[#00B4D8] dark:border-[#D4AF37]/50 hover:shadow-xl hover:shadow-[#00B4D8]/5 dark:shadow-[#D4AF37]/5 transition-all cursor-pointer text-center group"
+                onClick={() => setSelectedLandingSubject(subject.title)}
+                className="block group cursor-pointer"
               >
-                <div className={`w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-3xl mb-3 sm:mb-4 ${subject.color} group-hover:scale-110 transition-transform`}>
-                  {subject.icon}
-                </div>
-                <h3 className="text-sm sm:text-lg font-black text-gray-800 dark:text-gray-100">{subject.title}</h3>
-              </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.04 }}
+                  className="bg-white dark:bg-[#1A1A24] rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-gray-200 dark:border-[#2D2D3D] hover:border-[#00B4D8] dark:hover:border-[#D4AF37] hover:shadow-xl hover:shadow-[#00B4D8]/5 dark:hover:shadow-[#D4AF37]/5 transition-all text-center h-full flex flex-col items-center justify-center"
+                >
+                  <div className={`w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-xl sm:rounded-2xl flex items-center justify-center mb-3 sm:mb-4 ${subject.color} group-hover:scale-110 transition-transform`}>
+                    <subject.icon className="w-6 h-6 sm:w-8 sm:h-8" />
+                  </div>
+                  <h3 className="text-sm sm:text-lg font-black text-gray-800 dark:text-gray-100">{subject.title}</h3>
+                </motion.div>
+              </div>
             ))}
           </div>
         </div>
@@ -1063,6 +1101,140 @@ export default function LandingPage() {
                 >
                   إغلاق
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Subject Courses Browser Modal */}
+        {selectedLandingSubject && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedLandingSubject(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-md"
+            />
+
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-4xl max-h-[85vh] bg-white dark:bg-[#15151F] rounded-[32px] shadow-2xl border border-gray-100 dark:border-[#2D2D3D] overflow-hidden flex flex-col z-10"
+              dir="rtl"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-gray-100 dark:border-[#2D2D3D] flex items-center justify-between bg-gray-50/50 dark:bg-[#1C1C28]/50 shrink-0">
+                <div>
+                  <h3 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white flex items-center gap-2">
+                    <span>كورسات مادة: {selectedLandingSubject}</span>
+                    <Sparkles className="w-5 h-5 text-[#00B4D8] dark:text-[#D4AF37] animate-pulse" />
+                  </h3>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 font-bold mt-1">تصفح الكورسات المتاحة حالياً للمادة</p>
+                </div>
+                <button
+                  onClick={() => setSelectedLandingSubject(null)}
+                  className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-[#2D2D3D] dark:hover:bg-[#3D3D4D] text-gray-500 dark:text-gray-400 flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6">
+                {loadingCourses ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3">
+                    <div className="w-10 h-10 border-4 border-[#00B4D8]/30 dark:border-[#D4AF37]/30 border-t-[#00B4D8] dark:border-t-[#D4AF37] rounded-full animate-spin" />
+                    <span className="text-gray-500 dark:text-gray-400 font-bold text-sm">جاري تحميل الكورسات...</span>
+                  </div>
+                ) : subjectCourses.length === 0 ? (
+                  <div className="text-center py-16 px-4">
+                    <div className="w-20 h-20 bg-gray-50 dark:bg-[#1A1A24] rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-100 dark:border-[#2D2D3D]">
+                      <BookOpen className="w-10 h-10 text-gray-400 dark:text-gray-500" />
+                    </div>
+                    <h4 className="text-lg font-black text-gray-800 dark:text-gray-100 mb-2">لا توجد كورسات متاحة حالياً</h4>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm max-w-md mx-auto leading-relaxed mb-6">
+                      لم يتم نشر أي كورسات لمادة {selectedLandingSubject} في هذه اللحظة، ولكن يمكنك تسجيل حساب مجاني ومتابعتنا لمعرفة فور نزولها!
+                    </p>
+                    <Link
+                      to="/register"
+                      className="inline-flex items-center gap-2 px-6 py-3 bg-[#00B4D8] dark:bg-[#D4AF37] text-white font-black text-sm rounded-2xl hover:opacity-90 active:scale-[0.98] transition-all shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20"
+                    >
+                      إنشاء حساب مجاني <ArrowRight className="w-4 h-4 -rotate-180" />
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="grid sm:grid-cols-2 gap-6">
+                    {subjectCourses.map((course) => (
+                      <div
+                        key={course.id}
+                        className="bg-gray-50 dark:bg-[#1A1A24] rounded-2xl border border-gray-100 dark:border-[#2D2D3D] hover:border-[#00B4D8] dark:hover:border-[#D4AF37] transition-all overflow-hidden flex flex-col group hover:shadow-lg"
+                      >
+                        {/* Course Image or Default */}
+                        <div className="h-40 bg-gray-200 dark:bg-[#232333] relative overflow-hidden shrink-0">
+                          {course.imageUrl ? (
+                            <img
+                              src={course.imageUrl}
+                              alt={course.title}
+                              referrerPolicy="no-referrer"
+                              loading="lazy"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-tr from-[#0077B6]/20 to-[#00B4D8]/20 dark:from-[#B8860B]/20 dark:to-[#D4AF37]/20 flex items-center justify-center">
+                              <BookOpen className="w-12 h-12 text-[#00B4D8]/50 dark:text-[#D4AF37]/50" />
+                            </div>
+                          )}
+                          <div className="absolute top-3 left-3 bg-white/95 dark:bg-[#1A1A24]/95 px-2.5 py-1 rounded-lg text-[10px] font-black text-[#00B4D8] dark:text-[#D4AF37] shadow-sm">
+                            {course.grade}
+                          </div>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-5 flex-1 flex flex-col justify-between">
+                          <div>
+                            <h4 className="font-black text-gray-900 dark:text-white text-base line-clamp-1 mb-1.5">{course.title}</h4>
+                            <p className="text-gray-500 dark:text-gray-400 text-xs font-bold line-clamp-2 mb-4 leading-relaxed">{course.description || 'لا يوجد وصف متاح لهذا الكورس حالياً.'}</p>
+                          </div>
+
+                          <div className="space-y-3.5 border-t border-gray-100 dark:border-[#2D2D3D]/50 pt-3.5">
+                            {/* Metadata */}
+                            <div className="grid grid-cols-2 gap-2 text-[11px] font-bold text-gray-500 dark:text-gray-400">
+                              <div className="flex items-center gap-1.5">
+                                <Users className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                <span className="truncate">{course.teacherName || 'أستاذ المادة'}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <BookOpen className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                <span>{course.lessonsCount || 0} درس</span>
+                              </div>
+                            </div>
+
+                            {/* Button and Price */}
+                            <div className="flex items-center justify-between gap-3 pt-1">
+                              <div className="text-right">
+                                <span className="text-[10px] block font-bold text-gray-400">سعر الكورس</span>
+                                <span className="text-sm font-black text-gray-800 dark:text-gray-200">
+                                  {course.price > 0 ? `${course.price} ج.م` : 'مجاني 🎁'}
+                                </span>
+                              </div>
+                              <Link
+                                to={user ? `/course/${course.id}` : `/register`}
+                                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] hover:opacity-95 text-white font-black text-xs shadow-md flex items-center gap-1"
+                              >
+                                <span>ابدأ الدراسة</span>
+                                <ArrowRight className="w-3.5 h-3.5 -rotate-180" />
+                              </Link>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>

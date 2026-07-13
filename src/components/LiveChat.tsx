@@ -152,7 +152,7 @@ export default function LiveChat({ activeStream, userData, sendReaction }: LiveC
   };
 
   return (
-    <div id="live-chat-panel" className="bg-white dark:bg-[#12121A] rounded-3xl border border-gray-100 dark:border-[#1E1E2F] h-[600px] flex flex-col justify-between overflow-hidden shadow-xl text-right" dir="rtl">
+    <div id="live-chat-panel" className="bg-white dark:bg-[#12121A] rounded-3xl border border-gray-100 dark:border-[#1E1E2F] h-[600px] lg:h-[calc(100vh-140px)] lg:max-h-[800px] lg:sticky lg:top-24 flex flex-col justify-between overflow-hidden shadow-xl text-right" dir="rtl">
       
       {/* Header */}
       <div className="p-4 bg-gray-50/80 dark:bg-[#1A1A26]/80 backdrop-blur-md border-b border-gray-100 dark:border-[#222235] flex items-center justify-between z-10 shrink-0">
@@ -235,6 +235,7 @@ export default function LiveChat({ activeStream, userData, sendReaction }: LiveC
           </div>
         ) : (
           chatMessages.map((msg) => {
+            const isMe = msg.userId === currentUserId;
             const isSenderTeacher = msg.userRole === 'معلم';
             const isSystemReaction = msg.message.includes('تفاجأ وأرسل تفاعل: ');
             const isPinned = pinnedMsg?.id === msg.id;
@@ -243,11 +244,11 @@ export default function LiveChat({ activeStream, userData, sendReaction }: LiveC
               <div 
                 key={msg.id} 
                 className={`group relative flex flex-col gap-1 max-w-[88%] ${
-                  isSenderTeacher ? 'mr-0 ml-auto text-right' : 'ml-0 mr-auto text-right'
+                  isMe ? 'mr-auto ml-0 text-right' : 'ml-auto mr-0 text-right'
                 }`}
               >
                 {/* Header Information */}
-                <div className={`flex items-center gap-1.5 ${isSenderTeacher ? 'justify-start' : 'justify-start'}`}>
+                <div className={`flex items-center gap-1.5 ${isMe ? 'justify-end' : 'justify-start'}`}>
                   <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
                     isSenderTeacher 
                       ? 'bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400' 

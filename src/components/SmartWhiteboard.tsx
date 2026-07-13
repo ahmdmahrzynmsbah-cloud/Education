@@ -126,9 +126,21 @@ export default function SmartWhiteboard({ streamId, isTeacher, onClose }: SmartW
         drawStrokes();
       }
     };
+    
+    let observer: ResizeObserver;
+    if (containerRef.current) {
+      observer = new ResizeObserver(() => {
+        handleResize();
+      });
+      observer.observe(containerRef.current);
+    }
+
     window.addEventListener('resize', handleResize);
     handleResize();
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (observer) observer.disconnect();
+    };
   }, [drawStrokes]);
 
   // Pointer Events
@@ -268,77 +280,72 @@ export default function SmartWhiteboard({ streamId, isTeacher, onClose }: SmartW
     <div className="absolute inset-0 z-50 bg-[#F8FAFC] dark:bg-[#0D0D12] overflow-hidden flex flex-col rounded-3xl" ref={containerRef}>
       
       {/* Toolbar */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white dark:bg-[#1E1E2F] shadow-lg rounded-2xl p-2 flex items-center gap-2 border border-gray-100 dark:border-gray-800">
-        
-        {isTeacher && (
-          <>
-            <button
-              onClick={() => setActiveTool('pen')}
-              className={`p-2 rounded-xl transition-all ${activeTool === 'pen' ? 'bg-[#00B4D8]/10 text-[#00B4D8]' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-              title="قلم"
-            >
-              <PenTool className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setActiveTool('highlighter')}
-              className={`p-2 rounded-xl transition-all ${activeTool === 'highlighter' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-              title="قلم تمييز"
-            >
-              <Highlighter className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setActiveTool('eraser')}
-              className={`p-2 rounded-xl transition-all ${activeTool === 'eraser' ? 'bg-red-500/10 text-red-500' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-              title="ممحاة"
-            >
-              <Eraser className="w-5 h-5" />
-            </button>
-            
-            <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
-            
-            {activeTool !== 'eraser' && (
-              <input
-                type="color"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                className="w-8 h-8 rounded-lg cursor-pointer border-0 bg-transparent p-0"
-                title="اللون"
-              />
-            )}
-            
-            <select
-              value={size}
-              onChange={(e) => setSize(Number(e.target.value))}
-              className="bg-gray-50 dark:bg-[#1A1A26] rounded-xl text-xs font-bold border border-gray-200 dark:border-gray-700 p-2 outline-none"
-            >
-              <option value="2">رفيع</option>
-              <option value="4">متوسط</option>
-              <option value="8">عريض</option>
-              <option value="16">عريض جداً</option>
-              <option value="32">عملاق</option>
-            </select>
+      {isTeacher && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white dark:bg-[#1E1E2F] shadow-lg rounded-2xl p-2 flex items-center gap-2 border border-gray-100 dark:border-gray-800">
+          
+          <button
+            onClick={() => setActiveTool('pen')}
+            className={`p-2 rounded-xl transition-all ${activeTool === 'pen' ? 'bg-[#00B4D8]/10 text-[#00B4D8]' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+            title="قلم"
+          >
+            <PenTool className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setActiveTool('highlighter')}
+            className={`p-2 rounded-xl transition-all ${activeTool === 'highlighter' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+            title="قلم تمييز"
+          >
+            <Highlighter className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setActiveTool('eraser')}
+            className={`p-2 rounded-xl transition-all ${activeTool === 'eraser' ? 'bg-red-500/10 text-red-500' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+            title="ممحاة"
+          >
+            <Eraser className="w-5 h-5" />
+          </button>
+          
+          <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
+          
+          {activeTool !== 'eraser' && (
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="w-8 h-8 rounded-lg cursor-pointer border-0 bg-transparent p-0"
+              title="اللون"
+            />
+          )}
+          
+          <select
+            value={size}
+            onChange={(e) => setSize(Number(e.target.value))}
+            className="bg-gray-50 dark:bg-[#1A1A26] rounded-xl text-xs font-bold border border-gray-200 dark:border-gray-700 p-2 outline-none"
+          >
+            <option value="2">رفيع</option>
+            <option value="4">متوسط</option>
+            <option value="8">عريض</option>
+            <option value="16">عريض جداً</option>
+            <option value="32">عملاق</option>
+          </select>
+          <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
 
-            <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1"></div>
-          </>
-        )}
+          <button
+            onClick={() => setActiveTool('pan')}
+            className={`p-2 rounded-xl transition-all ${activeTool === 'pan' ? 'bg-indigo-500/10 text-indigo-500' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+            title="تحريك (Pan)"
+          >
+            <Move className="w-5 h-5" />
+          </button>
+          
+          <button
+            onClick={() => { setScale(1); setOffset({x:0, y:0}); }}
+            className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all text-xs font-bold"
+            title="إعادة الضبط"
+          >
+            {Math.round(scale * 100)}%
+          </button>
 
-        <button
-          onClick={() => setActiveTool('pan')}
-          className={`p-2 rounded-xl transition-all ${activeTool === 'pan' ? 'bg-indigo-500/10 text-indigo-500' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-          title="تحريك (Pan)"
-        >
-          <Move className="w-5 h-5" />
-        </button>
-        
-        <button
-          onClick={() => { setScale(1); setOffset({x:0, y:0}); }}
-          className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all text-xs font-bold"
-          title="إعادة الضبط"
-        >
-          {Math.round(scale * 100)}%
-        </button>
-
-        {isTeacher && (
           <button
             onClick={handleClear}
             className="p-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
@@ -346,25 +353,25 @@ export default function SmartWhiteboard({ streamId, isTeacher, onClose }: SmartW
           >
             <Trash2 className="w-5 h-5" />
           </button>
-        )}
 
-        <button
-          onClick={handleDownload}
-          className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
-          title="حفظ الصبورة كصورة"
-        >
-          <Download className="w-5 h-5" />
-        </button>
+          <button
+            onClick={handleDownload}
+            className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all"
+            title="حفظ الصبورة كصورة"
+          >
+            <Download className="w-5 h-5" />
+          </button>
 
-        <button
-          onClick={onClose}
-          className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all bg-red-50 dark:bg-red-500/10 !text-red-500 ml-2"
-          title="إغلاق الصبورة"
-        >
-          <X className="w-5 h-5" />
-        </button>
-        
-      </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all bg-red-50 dark:bg-red-500/10 !text-red-500 ml-2"
+            title="إغلاق الصبورة"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          
+        </div>
+      )}
 
       <canvas
         ref={canvasRef}
