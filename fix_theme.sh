@@ -1,3 +1,5 @@
+#!/bin/bash
+cat << 'INNER_EOF' > src/components/ThemeToggle.tsx
 import { useEffect, useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -53,3 +55,4 @@ export default function ThemeToggle() {
     </button>
   );
 }
+INNER_EOF

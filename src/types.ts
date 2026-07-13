@@ -25,9 +25,12 @@ export interface Course {
   teacherName: string;
   imageUrl: string;
   createdAt: string;
+  views?: number;
   enrolledStudents: number;
+  enrolledStudentIds?: string[];
   lessonsCount: number;
   isActive?: boolean;
+  status?: 'published' | 'draft' | 'under_review';
 }
 
 export interface Lesson {
@@ -38,6 +41,8 @@ export interface Lesson {
   videoUrl: string;
   order: number;
   createdAt: string;
+  views?: number;
+  durationInSeconds?: number;
 }
 
 export interface Lecture {
@@ -56,3 +61,161 @@ export interface Code {
   assignedTo?: string;
   expiresAt?: string;
 }
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+  views?: number;
+  type: 'enrollment' | 'system' | 'live_stream';
+}
+
+export interface Review {
+  id: string;
+  courseId: string;
+  userId: string;
+  userName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+  isPrivate?: boolean;
+}
+
+export interface LessonNote {
+  id: string;
+  userId: string;
+  courseId: string;
+  lessonId: string;
+  lessonTitle: string;
+  content: string;
+  updatedAt: string;
+}
+
+export interface Question {
+  id: string;
+  text: string;
+  options: string[];
+  correctOptionIndex: number;
+  explanation?: string;
+  points: number;
+}
+
+export interface Quiz {
+  id: string;
+  courseId: string;
+  lessonId: string;
+  title: string;
+  description?: string;
+  questions: Question[];
+  timeLimit?: number; // in minutes (0 or undefined for no limit)
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface QuizSubmission {
+  id: string;
+  userId: string;
+  userName: string;
+  quizId: string;
+  courseId: string;
+  lessonId: string;
+  score: number; // percentage or points
+  totalPoints: number;
+  correctAnswers: number;
+  totalQuestions: number;
+  answers: Record<string, number>; // questionId -> selectedOptionIndex
+  submittedAt: string;
+  passed: boolean;
+}
+
+export interface QuickNote {
+  id: string;
+  userId: string;
+  courseId: string;
+  courseTitle: string;
+  lessonId?: string;
+  lessonTitle?: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FocusSession {
+  id: string;
+  userId: string;
+  userName: string;
+  courseId: string;
+  courseTitle: string;
+  lessonId?: string;
+  lessonTitle?: string;
+  focusMinutes: number;
+  createdAt: string;
+}
+
+export interface LiveMaterial {
+  id: string;
+  title: string;
+  url: string;
+  type: 'pdf' | 'image' | 'other';
+  uploadedAt: string;
+}
+
+export interface LiveStream {
+  id: string;
+  title: string;
+  description: string;
+  courseId: string;
+  courseTitle: string;
+  teacherId: string;
+  teacherName: string;
+  status: 'scheduled' | 'live' | 'ended';
+  scheduledAt?: string;
+  startedAt?: string;
+  endedAt?: string;
+  viewerCount: number;
+  whiteboardData?: string; // Base64 or serialized stroke data for real-time sync
+  pinnedMessage?: LiveChatMessage | null;
+  materials?: LiveMaterial[];
+  isScreenSharing?: boolean;
+  sharedScreenType?: 'presentation' | 'code' | 'whiteboard';
+  activeSlideIndex?: number;
+  voiceBroadcastText?: string;
+  voiceBroadcastTime?: string;
+  recordedUrl?: string;
+  recordingSummary?: string;
+}
+
+export interface LiveChatMessage {
+  id: string;
+  streamId: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface LivePoll {
+  id: string;
+  streamId: string;
+  question: string;
+  options: string[];
+  votes: Record<string, number>; // e.g. "0": 10, "1": 15
+  votedUserIds?: string[];
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface LiveHandRaise {
+  id: string;
+  streamId: string;
+  userId: string;
+  userName: string;
+  message?: string;
+  createdAt: string;
+  resolved: boolean;
+}
+

@@ -77,6 +77,46 @@ async function startServer() {
     res.json({ url: fileUrl });
   });
 
+  // Gemini AI Chat Route
+  app.post('/api/chat', async (req, res) => {
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: 'GEMINI_API_KEY is missing' });
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      const { prompt, history, context } = req.body;
+      
+      let fullPrompt = "";
+      if (context) {
+         fullPrompt += `System Context: ${context}\n\n`;
+      }
+      
+      if (history && history.length > 0) {
+         fullPrompt += "Conversation History:\n";
+         history.forEach((msg: any) => {
+            fullPrompt += `${msg.role}: ${msg.content}\n`;
+         });
+         fullPrompt += "\n";
+      }
+      
+      fullPrompt += `User: ${prompt}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: fullPrompt,
+      });
+
+      res.json({ text: response.text });
+    } catch (error: any) {
+      console.error("Gemini API Error:", error);
+      res.status(500).json({ error: error.message || 'Failed to generate content' });
+    }
+  });
+
   // API Route for chunked upload
   app.post('/api/upload-chunk', upload.single('chunk'), (req, res) => {
     const { fileId, chunkIndex } = req.body;

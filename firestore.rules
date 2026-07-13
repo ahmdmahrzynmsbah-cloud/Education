@@ -1,8 +1,119 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Default-deny catch-all safety net
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // 1. Users collection
+    // Leaderboard and public student profiles are read on LandingPage and Dashboard.
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    // 2. Courses collection
+    // Courses are browsable publicly on the LandingPage.
+    match /courses/{courseId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // 3. Lessons collection
+    // Lessons are read during course viewing.
+    match /lessons/{lessonId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // 4. Course Progress collection
+    match /course_progress/{progressId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 5. Quizzes collection
+    match /quizzes/{quizId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // 6. Quiz Submissions collection
+    match /quiz_submissions/{submissionId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 7. Quick Notes collection
+    match /quick_notes/{noteId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 8. Notifications collection
+    match /notifications/{notificationId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 9. Transactions collection
+    match /transactions/{transactionId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 10. Reviews collection
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // 11. Schedule Events collection
+    match /schedule_events/{eventId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // 12. Notes collection
+    match /notes/{noteId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 13. Focus Sessions collection
+    match /focus_sessions/{sessionId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 14. Live Streams
+    match /live_streams/{streamId} {
+      allow read, write: if isSignedIn();
+      
+      match /chat/{msgId} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /polls/{pollId} {
+        allow read, write: if isSignedIn();
+      }
+      
+      match /signaling/{peerId} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /raised_hands/{handId} {
+        allow read, write: if isSignedIn();
+      }
+
+      match /whiteboard_strokes/{strokeId} {
+        allow read, write: if isSignedIn();
+      }
     }
   }
 }
