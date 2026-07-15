@@ -2,7 +2,7 @@ import React from "react";
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Lock, ArrowRight, Plus, Trash2, Video, BookOpen, Clock, Edit2, X, Upload, Star, AlertTriangle, FileText, Save, Check, Loader2, History, Award, Calendar, Download, Sparkles, Heart, ThumbsUp, MessageSquare, Reply, Send, ShieldAlert } from 'lucide-react';
+import { Play, Lock, ArrowRight, Plus, Trash2, Video, BookOpen, Clock, Edit2, X, Upload, Star, AlertTriangle, FileText, Save, Check, Loader2, History, Award, Calendar, Download, Sparkles, Heart, ThumbsUp, MessageSquare, Reply, Send, ShieldAlert, Copy } from 'lucide-react';
 import { doc, getDoc, updateDoc, arrayUnion, increment, collection, query, where, getDocs, setDoc, addDoc, deleteDoc, orderBy } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { User, Course, Lesson, Review, LessonNote } from '../types';
@@ -83,6 +83,18 @@ export default function CourseDetails() {
   const [activeReplyInput, setActiveReplyInput] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [isSubmittingReply, setIsSubmittingReply] = useState<Record<string, boolean>>({});
+
+  // Vodafone Cash payment modal states
+  const [paymentRequest, setPaymentRequest] = useState<any | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentSenderName, setPaymentSenderName] = useState('');
+  const [paymentSenderPhone, setPaymentSenderPhone] = useState('');
+  const [paymentScreenshotFile, setPaymentScreenshotFile] = useState<File | null>(null);
+  const [paymentScreenshotPreview, setPaymentScreenshotPreview] = useState('');
+  const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [paymentUploadProgress, setPaymentUploadProgress] = useState(0);
+  const [vodafoneCashNumber, setVodafoneCashNumber] = useState('01012345678');
+  const [copiedNumber, setCopiedNumber] = useState(false);
 
   // Notes state
   const [lessonTab, setLessonTab] = useState<'info' | 'quiz' | 'notes' | 'pomodoro'>('info');
@@ -301,6 +313,33 @@ export default function CourseDetails() {
               setCompletedLessons(pData.completedLessons || []);
               setLessonProgressMap(pData.lessonProgress || {});
               lastWatchedId = pData.lastWatchedLessonId || "";
+            }
+
+            // Fetch platform settings for Vodafone Cash number
+            try {
+              const settingsSnap = await getDoc(doc(db, 'platform_settings', 'config'));
+              if (settingsSnap.exists() && settingsSnap.data().vodafoneCashNumber) {
+                setVodafoneCashNumber(settingsSnap.data().vodafoneCashNumber);
+              }
+            } catch (err) {
+              console.error("Error fetching platform settings inside course:", err);
+            }
+
+            // Fetch course payment request status
+            try {
+              const paymentQuery = query(
+                collection(db, 'course_payments'),
+                where('userId', '==', user.uid),
+                where('courseId', '==', id)
+              );
+              const paymentSnap = await getDocs(paymentQuery);
+              if (!paymentSnap.empty) {
+                const payments = paymentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                payments.sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+                setPaymentRequest(payments[0]);
+              }
+            } catch (err) {
+              console.error("Error fetching course payment status:", err);
             }
           }
 
@@ -826,7 +865,6 @@ export default function CourseDetails() {
         userId: userData.id,
         courseId: course.id,
         lastWatchedAt: new Date().toISOString()
-
       });
       
       await addDoc(collection(db, "notifications"), {
@@ -843,6 +881,85 @@ export default function CourseDetails() {
       console.error("Error enrolling:", error);
     } finally {
       setEnrolling(false);
+    }
+  };
+
+  const handleCopyNumber = () => {
+    navigator.clipboard.writeText(vodafoneCashNumber);
+    setCopiedNumber(true);
+    toast.success("تم نسخ الرقم بنجاح! 📋");
+    setTimeout(() => setCopiedNumber(false), 2000);
+  };
+
+  const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPaymentScreenshotFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPaymentScreenshotPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userData || !course) return;
+    if (!paymentSenderName.trim()) {
+      toast.error("الرجاء إدخال اسمك بالكامل");
+      return;
+    }
+    if (!paymentSenderPhone.trim()) {
+      toast.error("الرجاء إدخال الرقم الذي قمت بالتحويل منه");
+      return;
+    }
+    if (!paymentScreenshotFile) {
+      toast.error("الرجاء إرفاق صورة إثبات أو لقطة شاشة التحويل");
+      return;
+    }
+
+    setSubmittingPayment(true);
+    try {
+      // 1. Upload screenshot using uploadChunkedFile
+      const screenshotUrl = await uploadChunkedFile(paymentScreenshotFile, setPaymentUploadProgress);
+
+      // 2. Save payment request to course_payments collection
+      const newPaymentRequest = {
+        userId: userData.id,
+        userName: userData.name,
+        userPhone: userData.phone || '',
+        courseId: course.id,
+        courseTitle: course.title,
+        coursePrice: course.price || 0,
+        senderName: paymentSenderName.trim(),
+        senderPhone: paymentSenderPhone.trim(),
+        screenshotUrl,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const docRef = await addDoc(collection(db, "course_payments"), newPaymentRequest);
+      setPaymentRequest({ id: docRef.id, ...newPaymentRequest });
+
+      // 3. Dispatch notification to course teacher/admin
+      await addDoc(collection(db, "notifications"), {
+        userId: course.teacherId,
+        title: "طلب اشتراك جديد بانتظار الموافقة",
+        message: `طلب الطالب ${userData.name} الاشتراك في كورس ${course.title} عبر فودافون كاش`,
+        read: false,
+        createdAt: new Date().toISOString(),
+        type: "enrollment"
+      });
+
+      toast.success("تم إرسال طلب الاشتراك بنجاح! سيقوم الأدمن بمراجعته وتفعيله لك قريباً. ✨");
+      setShowPaymentModal(false);
+    } catch (error) {
+      console.error("Error submitting payment:", error);
+      toast.error("حدث خطأ أثناء إرسال طلب الاشتراك. يرجى المحاولة لاحقاً.");
+    } finally {
+      setSubmittingPayment(false);
     }
   };
 
@@ -921,19 +1038,84 @@ export default function CourseDetails() {
           <div className="lg:col-span-2 flex flex-col">
             <div className="bg-black rounded-3xl overflow-hidden aspect-video relative shadow-lg border border-gray-200 dark:border-[#2D2D3D] w-full flex-1 min-h-[240px] md:min-h-[350px]">
               {!canWatch ? (
-                <div className="w-full h-full absolute inset-0 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 bg-gray-900 p-8 text-center">
+                <div className="w-full h-full absolute inset-0 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 bg-gray-900 p-8 text-center select-none overflow-y-auto">
                   <Lock className="w-16 h-16 mb-4 opacity-50 text-[#00B4D8] dark:text-[#D4AF37]" />
                   <h2 className="text-2xl font-black text-white mb-2">هذا الكورس مغلق</h2>
-                  <p className="font-medium text-lg mb-6 text-gray-300">
-                    {isSuspended ? 'لقد تم إيقاف وصولك إلى هذا الكورس من قبل المعلم' : 'يجب عليك التسجيل في الكورس لتتمكن من مشاهدة الدروس'}
-                  </p>
-                  <button 
-                    onClick={handleEnroll}
-                    disabled={enrolling || isSuspended}
-                    className={`px-8 py-3 rounded-xl font-bold text-lg transition-colors cursor-pointer ${isSuspended ? 'bg-red-500/20 text-red-500 cursor-not-allowed' : 'bg-[#00B4D8] dark:bg-[#D4AF37] text-white hover:bg-[#0077B6] dark:hover:bg-[#B8860B] disabled:opacity-50'}`}
-                  >
-                    {isSuspended ? 'الوصول موقوف' : enrolling ? 'جاري التسجيل...' : 'اشترك الآن مجاناً'}
-                  </button>
+                  
+                  {isSuspended ? (
+                    <>
+                      <p className="font-medium text-lg mb-6 text-red-400">
+                        لقد تم إيقاف وصولك إلى هذا الكورس من قبل المعلم
+                      </p>
+                      <button 
+                        disabled
+                        className="px-8 py-3 rounded-xl font-bold text-lg bg-red-500/20 text-red-500 cursor-not-allowed"
+                      >
+                        الوصول موقوف
+                      </button>
+                    </>
+                  ) : paymentRequest?.status === 'pending' ? (
+                    <>
+                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 mb-6 max-w-md">
+                        <p className="font-bold text-base text-amber-500 mb-2">
+                          طلب الاشتراك قيد المعالجة والمراجعة حالياً ⏳
+                        </p>
+                        <p className="text-xs font-semibold text-gray-300 leading-relaxed">
+                          لقد أرسلت طلب الاشتراك والدفع بنجاح. سيقوم الأدمن بمراجعة لقطة الشاشة والتحويل وتفعيل الكورس لك فوراً. شكراً لصبرك!
+                        </p>
+                      </div>
+                      <button 
+                        disabled
+                        className="px-8 py-3 rounded-xl font-bold text-lg bg-amber-500/20 text-amber-500 cursor-not-allowed border-0"
+                      >
+                        قيد المعالجة والمراجعة...
+                      </button>
+                    </>
+                  ) : paymentRequest?.status === 'rejected' ? (
+                    <>
+                      <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-5 mb-6 max-w-md">
+                        <p className="font-bold text-base text-red-500 mb-2">
+                          تم رفض طلب الاشتراك السابق ❌
+                        </p>
+                        <p className="text-xs font-black text-gray-300 leading-relaxed mb-3">
+                          سبب الرفض: <span className="text-red-400">{paymentRequest.rejectionReason || 'الرجاء إعادة المحاولة والتحويل بشكل صحيح.'}</span>
+                        </p>
+                        <p className="text-[11px] font-bold text-gray-400">
+                          بإمكانك إعادة تحويل المبلغ وإرسال طلب جديد مع إثبات صحيح.
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => setShowPaymentModal(true)}
+                        className="px-8 py-3 rounded-xl font-bold text-lg bg-[#00B4D8] dark:bg-[#D4AF37] text-white dark:text-[#0D0D12] hover:bg-[#0077B6] dark:hover:bg-[#B8860B] transition-colors cursor-pointer border-0"
+                      >
+                        تقديم طلب اشتراك جديد
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-medium text-lg mb-6 text-gray-300 max-w-md leading-relaxed">
+                        {course.price && course.price > 0 
+                          ? `هذا الكورس مدفوع بقيمة ${course.price} ج.م. يرجى الاشتراك وتفعيل الكورس لمشاهدة كافة الدروس والمحتوى.`
+                          : 'يجب عليك التسجيل في الكورس لتتمكن من مشاهدة الدروس وتتبع تقدمك.'}
+                      </p>
+                      {course.price && course.price > 0 ? (
+                        <button 
+                          onClick={() => setShowPaymentModal(true)}
+                          className="px-8 py-3 rounded-xl font-bold text-lg bg-[#00B4D8] dark:bg-[#D4AF37] text-white dark:text-[#0D0D12] hover:bg-[#0077B6] dark:hover:bg-[#B8860B] transition-colors cursor-pointer border-0 animate-pulse"
+                        >
+                          اشترك الآن بقيمة {course.price} ج.م
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={handleEnroll}
+                          disabled={enrolling}
+                          className="px-8 py-3 rounded-xl font-bold text-lg bg-[#00B4D8] dark:bg-[#D4AF37] text-white hover:bg-[#0077B6] dark:hover:bg-[#B8860B] disabled:opacity-50 transition-colors cursor-pointer border-0"
+                        >
+                          {enrolling ? 'جاري التسجيل...' : 'اشترك الآن مجاناً'}
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               ) : activeLesson ? (
                 activeLesson.videoUrl.includes('youtube.com') || activeLesson.videoUrl.includes('youtu.be') ? (
@@ -2265,6 +2447,167 @@ export default function CourseDetails() {
                   )}
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showPaymentModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-lg shadow-2xl border border-gray-150 dark:border-[#2D2D3D] flex flex-col overflow-hidden max-h-[90vh]"
+              dir="rtl"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-gray-100 dark:border-[#2D2D3D] flex items-center justify-between bg-gray-50/50 dark:bg-[#1C1C28]/50">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-rose-50 dark:bg-rose-950/30 rounded-xl text-rose-500">
+                    <span className="text-xl">💰</span>
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm text-gray-900 dark:text-white">الاشتراك عبر فودافون كاش</h3>
+                    <p className="text-[10px] font-bold text-gray-400">تفعيل يدوي وسريع وآمن للكورس</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPaymentModal(false)}
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-[#2D2D3D] rounded-full transition-colors text-gray-500 cursor-pointer bg-transparent border-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handlePaymentSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
+                {/* Vodafone Cash Details */}
+                <div className="bg-rose-50/50 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-rose-600 dark:text-rose-400">تحويل فودافون كاش (Vodafone Cash):</span>
+                    <span className="text-[11px] font-black bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 px-2 py-0.5 rounded-lg font-sans">
+                      {course.price} ج.م
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between bg-white dark:bg-[#0D0D12] border border-rose-100 dark:border-rose-950 rounded-xl p-3">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold text-gray-400">الرقم المخصص للتحويل</span>
+                      <span className="text-base font-black text-gray-900 dark:text-white font-sans tracking-wider" dir="ltr">
+                        {vodafoneCashNumber}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCopyNumber}
+                      className="p-2.5 bg-gray-50 hover:bg-rose-50 dark:bg-[#1A1A24] dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-xl transition-all active:scale-95 cursor-pointer border border-gray-100 dark:border-[#2D2D3D]"
+                      title="نسخ الرقم"
+                    >
+                      {copiedNumber ? <Check className="w-4 h-4 stroke-[3px]" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  
+                  <p className="text-[10.5px] font-bold text-gray-500 dark:text-gray-400 leading-relaxed text-right">
+                    ⚠️ يرجى تحويل مبلغ الكورس كاملاً وهو <span className="font-extrabold text-rose-600 dark:text-rose-400">{course.price} ج.م</span> إلى الرقم الموضح أعلاه، ثم ملء البيانات أدناه لرفع إثبات التحويل وتفعيل الكورس من الإدارة.
+                  </p>
+                </div>
+
+                {/* Sender Full Name */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-gray-700 dark:text-gray-200 block">اسمك بالكامل (اسم الطالب):</label>
+                  <input
+                    type="text"
+                    required
+                    value={paymentSenderName}
+                    onChange={(e) => setPaymentSenderName(e.target.value)}
+                    placeholder="أدخل اسمك ثلاثياً أو رباعياً لسهولة المطابقة..."
+                    className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-xs font-sans"
+                  />
+                </div>
+
+                {/* Sender Phone Number */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-gray-700 dark:text-gray-200 block">رقم الهاتف المحول منه (محفظة التحويل):</label>
+                  <input
+                    type="tel"
+                    required
+                    value={paymentSenderPhone}
+                    onChange={(e) => setPaymentSenderPhone(e.target.value)}
+                    placeholder="مثال: 01012345678"
+                    className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-xs font-sans text-right"
+                    dir="ltr"
+                  />
+                </div>
+
+                {/* Screenshot Upload */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-gray-700 dark:text-gray-200 block">إرفاق لقطة شاشة التحويل (إسكرين الإثبات):</label>
+                  <div 
+                    onClick={() => {
+                      const el = document.getElementById('payment-screenshot-input');
+                      el?.click();
+                    }}
+                    className="w-full h-40 border-2 border-dashed border-gray-300 dark:border-[#2D2D3D] rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 dark:hover:bg-[#13131C] transition-all relative overflow-hidden p-4 group"
+                  >
+                    {paymentScreenshotPreview ? (
+                      <div className="w-full h-full relative">
+                        <img 
+                          src={paymentScreenshotPreview} 
+                          alt="إسكرين التحويل" 
+                          className="w-full h-full object-contain"
+                        />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-black gap-1.5">
+                          <Upload className="w-4 h-4" /> تغيير الصورة
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center text-gray-500 dark:text-gray-400">
+                        <div className="p-3 bg-gray-100 dark:bg-[#1A1A24] rounded-2xl mb-2 text-rose-500">
+                          <Upload className="w-6 h-6" />
+                        </div>
+                        <span className="text-xs font-black text-gray-700 dark:text-gray-300">اضغط لرفع لقطة الشاشة</span>
+                        <span className="text-[10px] text-gray-400 mt-1">يُقبل الصور (PNG, JPG, JPEG)</span>
+                      </div>
+                    )}
+                    <input
+                      id="payment-screenshot-input"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleScreenshotChange}
+                      className="hidden"
+                    />
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="pt-4 flex items-center justify-end gap-3 border-t border-gray-100 dark:border-[#2D2D3D]">
+                  <button
+                    type="button"
+                    onClick={() => setShowPaymentModal(false)}
+                    className="px-5 py-2.5 rounded-xl border border-gray-200 dark:border-[#2D2D3D] hover:bg-gray-100 dark:hover:bg-[#222230] text-gray-700 dark:text-gray-300 text-xs font-black transition-colors cursor-pointer bg-transparent"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingPayment}
+                    className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-2.5 rounded-xl font-black text-xs shadow-md disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5 border-0"
+                  >
+                    {submittingPayment ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>جاري إرسال الطلب ({paymentUploadProgress}%)...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[3px]" />
+                        <span>تأكيد التحويل وإرسال الطلب</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

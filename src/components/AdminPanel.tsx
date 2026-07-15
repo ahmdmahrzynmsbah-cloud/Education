@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, updateDoc, doc, deleteDoc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, deleteDoc, getDoc, setDoc, onSnapshot, arrayUnion, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { 
   Users, BookOpen, Shield, Trash2, Edit2, Edit3, Loader2, CheckCircle2, 
@@ -7,7 +7,8 @@ import {
   GraduationCap, Book, AlertTriangle, FileText, Settings, Sparkles, 
   Hash, Award, FileCheck, Check, Activity, ShieldAlert,
   MapPin, School, PhoneCall, Layers, Clock, Search, Filter,
-  ArrowUpDown, SlidersHorizontal, RotateCcw, Archive
+  ArrowUpDown, SlidersHorizontal, RotateCcw, Archive,
+  CreditCard, Image as ImageIcon, XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
@@ -92,7 +93,7 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<any[]>([]);
   const [progressRecords, setProgressRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'students' | 'teachers' | 'parents' | 'approvals' | 'settings'>('students');
+  const [activeTab, setActiveTab] = useState<'students' | 'teachers' | 'parents' | 'approvals' | 'payments' | 'settings'>('students');
   const [studentStatusFilter, setStudentStatusFilter] = useState<'active' | 'archived'>('active');
 
   // Platform dynamic settings state
@@ -110,8 +111,21 @@ export default function AdminPanel() {
     subjectsTitle: 'استكشف المواد الدراسية',
     subjectsSubtitle: 'نخبة من أفضل المعلمين يقدمون لك شرحاً وافياً ومبسطاً لكل المواد الدراسية بمختلف المراحل.',
     faqTitle: 'الأسئلة الشائعة',
-    faqSubtitle: 'إجابات على كل استفساراتك حول المنصة'
+    faqSubtitle: 'إجابات على كل استفساراتك حول المنصة',
+    vodafoneCashNumber: '01012345678'
   });
+
+  // Course payments / Vodafone Cash requests state
+  const [payments, setPayments] = useState<any[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(false);
+  const [paymentSearch, setPaymentSearch] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  
+  // Rejection modal state
+  const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [processingPaymentId, setProcessingPaymentId] = useState<string | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -196,8 +210,22 @@ export default function AdminPanel() {
       toast.error('حدث خطأ أثناء جلب وتحديث بيانات المستخدمين');
     });
 
+    // Real-time listener for course_payments collection
+    const unsubscribePayments = onSnapshot(collection(db, 'course_payments'), (snapshot) => {
+      const paymentsData: any[] = [];
+      snapshot.forEach((document) => {
+        paymentsData.push({ id: document.id, ...document.data() });
+      });
+      // Sort payments newest first
+      paymentsData.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      setPayments(paymentsData);
+    }, (error) => {
+      console.error("Error listening to course payments:", error);
+    });
+
     return () => {
       unsubscribeUsers();
+      unsubscribePayments();
     };
   }, []);
 
@@ -285,6 +313,7 @@ export default function AdminPanel() {
       subjectsSubtitle: formData.get('subjectsSubtitle') as string || platformSettings.subjectsSubtitle,
       faqTitle: formData.get('faqTitle') as string || platformSettings.faqTitle,
       faqSubtitle: formData.get('faqSubtitle') as string || platformSettings.faqSubtitle,
+      vodafoneCashNumber: formData.get('vodafoneCashNumber') as string || platformSettings.vodafoneCashNumber,
     };
 
     try {
@@ -296,6 +325,102 @@ export default function AdminPanel() {
       toast.error("فشل في حفظ إعدادات المنصة");
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const handleApprovePayment = async (payment: any) => {
+    if (!payment || processingPaymentId) return;
+    setProcessingPaymentId(payment.id);
+    try {
+      // 1. Update the course: enrolledStudentIds & enrolledStudents increment
+      const courseRef = doc(db, 'courses', payment.courseId);
+      const courseSnap = await getDoc(courseRef);
+      if (courseSnap.exists()) {
+        const courseData = courseSnap.data();
+        const enrolledIds = courseData.enrolledStudentIds || [];
+        if (!enrolledIds.includes(payment.userId)) {
+          await updateDoc(courseRef, {
+            enrolledStudents: (courseData.enrolledStudents || 0) + 1,
+            enrolledStudentIds: arrayUnion(payment.userId)
+          });
+        }
+      }
+
+      // 2. Add course progress document for the student
+      const progressRef = doc(db, "course_progress", `${payment.userId}_${payment.courseId}`);
+      await setDoc(progressRef, {
+        userId: payment.userId,
+        courseId: payment.courseId,
+        lastWatchedAt: new Date().toISOString()
+      }, { merge: true });
+
+      // 3. Update the payment request status to approved
+      const paymentRef = doc(db, 'course_payments', payment.id);
+      await updateDoc(paymentRef, {
+        status: 'approved',
+        updatedAt: new Date().toISOString()
+      });
+
+      // 4. Send a notification to the student
+      await addDoc(collection(db, 'notifications'), {
+        userId: payment.userId,
+        title: "تم تفعيل اشتراكك بنجاح! 🎉",
+        message: `تمت الموافقة على اشتراكك في كورس "${payment.courseTitle}" وتفعيله. يمكنك الآن البدء في مشاهدة الدروس.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+        type: "enrollment"
+      });
+
+      toast.success(`تم قبول طلب الطالب ${payment.senderName} وتفعيل الكورس بنجاح! ✨`);
+    } catch (error) {
+      console.error("Error approving payment:", error);
+      toast.error("حدث خطأ أثناء قبول الطلب. الرجاء المحاولة مجدداً.");
+    } finally {
+      setProcessingPaymentId(null);
+    }
+  };
+
+  const handleOpenRejectModal = (payment: any) => {
+    setSelectedPayment(payment);
+    setRejectionReason('');
+    setRejectionModalOpen(true);
+  };
+
+  const handleRejectPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPayment || !rejectionReason.trim()) {
+      toast.error("الرجاء إدخال سبب الرفض");
+      return;
+    }
+    setProcessingPaymentId(selectedPayment.id);
+    try {
+      // 1. Update the payment request status to rejected with reason
+      const paymentRef = doc(db, 'course_payments', selectedPayment.id);
+      await updateDoc(paymentRef, {
+        status: 'rejected',
+        rejectionReason: rejectionReason.trim(),
+        updatedAt: new Date().toISOString()
+      });
+
+      // 2. Send a notification to the student
+      await addDoc(collection(db, 'notifications'), {
+        userId: selectedPayment.userId,
+        title: "تم رفض طلب اشتراكك ❌",
+        message: `تم رفض طلب اشتراكك في كورس "${selectedPayment.courseTitle}". السبب: ${rejectionReason.trim()}`,
+        read: false,
+        createdAt: new Date().toISOString(),
+        type: "enrollment"
+      });
+
+      toast.success(`تم رفض طلب الطالب ${selectedPayment.senderName} وإرسال التنبيه.`);
+      setRejectionModalOpen(false);
+      setSelectedPayment(null);
+      setRejectionReason('');
+    } catch (error) {
+      console.error("Error rejecting payment:", error);
+      toast.error("حدث خطأ أثناء رفض الطلب. الرجاء المحاولة مجدداً.");
+    } finally {
+      setProcessingPaymentId(null);
     }
   };
 
@@ -430,6 +555,7 @@ export default function AdminPanel() {
   const teachersCount = users.filter(u => u.role === 'teacher' && u.isApproved !== false).length;
   const parentsCount = users.filter(u => u.role === 'parent' && u.isApproved !== false).length;
   const pendingApprovalsCount = users.filter(u => u.isApproved === false).length;
+  const pendingPaymentsCount = payments.filter(p => p.status === 'pending').length;
 
   return (
     <div className="space-y-6 print:hidden">
@@ -489,7 +615,7 @@ export default function AdminPanel() {
         <div className="flex flex-wrap gap-4 border-b border-gray-100 dark:border-[#2D2D3D] pb-3 mb-6">
           <button
             onClick={() => setActiveTab('students')}
-            className={`pb-2 text-sm font-black transition-all relative ${
+            className={`pb-2 text-sm font-black transition-colors relative ${
               activeTab === 'students'
                 ? 'text-[#00B4D8] dark:text-[#D4AF37]'
                 : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
@@ -497,12 +623,16 @@ export default function AdminPanel() {
           >
             الطلاب ({users.filter(u => (u.role === 'student' || !u.role) && !u.isArchived && u.isApproved !== false).length})
             {activeTab === 'students' && (
-              <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
+              <motion.div 
+                layoutId="adminTab" 
+                className="absolute -bottom-[13px] left-0 right-0 h-[3px] bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full shadow-[0_1px_4px_rgba(0,180,216,0.3)] dark:shadow-[0_1px_4px_rgba(212,175,55,0.3)]" 
+                transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              />
             )}
           </button>
           <button
             onClick={() => setActiveTab('teachers')}
-            className={`pb-2 text-sm font-black transition-all relative ${
+            className={`pb-2 text-sm font-black transition-colors relative ${
               activeTab === 'teachers'
                 ? 'text-[#00B4D8] dark:text-[#D4AF37]'
                 : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
@@ -510,12 +640,16 @@ export default function AdminPanel() {
           >
             المعلمين ({teachersCount})
             {activeTab === 'teachers' && (
-              <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
+              <motion.div 
+                layoutId="adminTab" 
+                className="absolute -bottom-[13px] left-0 right-0 h-[3px] bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full shadow-[0_1px_4px_rgba(0,180,216,0.3)] dark:shadow-[0_1px_4px_rgba(212,175,55,0.3)]" 
+                transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              />
             )}
           </button>
           <button
             onClick={() => setActiveTab('parents')}
-            className={`pb-2 text-sm font-black transition-all relative ${
+            className={`pb-2 text-sm font-black transition-colors relative ${
               activeTab === 'parents'
                 ? 'text-[#00B4D8] dark:text-[#D4AF37]'
                 : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
@@ -523,12 +657,16 @@ export default function AdminPanel() {
           >
             أولياء الأمور ({parentsCount})
             {activeTab === 'parents' && (
-              <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
+              <motion.div 
+                layoutId="adminTab" 
+                className="absolute -bottom-[13px] left-0 right-0 h-[3px] bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full shadow-[0_1px_4px_rgba(0,180,216,0.3)] dark:shadow-[0_1px_4px_rgba(212,175,55,0.3)]" 
+                transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              />
             )}
           </button>
           <button
             onClick={() => setActiveTab('approvals')}
-            className={`pb-2 text-sm font-black transition-all relative ${
+            className={`pb-2 text-sm font-black transition-colors relative ${
               activeTab === 'approvals'
                 ? 'text-[#00B4D8] dark:text-[#D4AF37]'
                 : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
@@ -536,12 +674,33 @@ export default function AdminPanel() {
           >
             بانتظار القبول ({pendingApprovalsCount})
             {activeTab === 'approvals' && (
-              <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
+              <motion.div 
+                layoutId="adminTab" 
+                className="absolute -bottom-[13px] left-0 right-0 h-[3px] bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full shadow-[0_1px_4px_rgba(0,180,216,0.3)] dark:shadow-[0_1px_4px_rgba(212,175,55,0.3)]" 
+                transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('payments')}
+            className={`pb-2 text-sm font-black transition-colors relative ${
+              activeTab === 'payments'
+                ? 'text-[#00B4D8] dark:text-[#D4AF37]'
+                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+            }`}
+          >
+            طلبات الاشتراك ({pendingPaymentsCount})
+            {activeTab === 'payments' && (
+              <motion.div 
+                layoutId="adminTab" 
+                className="absolute -bottom-[13px] left-0 right-0 h-[3px] bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full shadow-[0_1px_4px_rgba(0,180,216,0.3)] dark:shadow-[0_1px_4px_rgba(212,175,55,0.3)]" 
+                transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              />
             )}
           </button>
           <button
             onClick={() => setActiveTab('settings')}
-            className={`pb-2 text-sm font-black transition-all relative ${
+            className={`pb-2 text-sm font-black transition-colors relative ${
               activeTab === 'settings'
                 ? 'text-[#00B4D8] dark:text-[#D4AF37]'
                 : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
@@ -549,7 +708,11 @@ export default function AdminPanel() {
           >
             إعدادات المنصة
             {activeTab === 'settings' && (
-              <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
+              <motion.div 
+                layoutId="adminTab" 
+                className="absolute -bottom-[13px] left-0 right-0 h-[3px] bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full shadow-[0_1px_4px_rgba(0,180,216,0.3)] dark:shadow-[0_1px_4px_rgba(212,175,55,0.3)]" 
+                transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              />
             )}
           </button>
         </div>
@@ -915,6 +1078,25 @@ export default function AdminPanel() {
                       </div>
                     </div>
                   </div>
+                  <div className="space-y-3 md:col-span-2 border-t border-gray-100 dark:border-[#2D2D3D] pt-4">
+                    <h4 className="text-xs font-black text-rose-500">إعدادات الدفع المالي (فودافون كاش)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 block mb-1">رقم فودافون كاش المعتمد لتحويلات الطلاب</label>
+                        <input
+                          type="text"
+                          name="vodafoneCashNumber"
+                          defaultValue={platformSettings.vodafoneCashNumber}
+                          placeholder="مثال: 01012345678"
+                          className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-rose-500 dark:text-white font-bold text-xs font-mono text-right"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div className="flex items-center text-[10.5px] text-gray-400 font-bold bg-rose-50 dark:bg-rose-950/20 p-3 rounded-xl border border-rose-100 dark:border-rose-900/30">
+                        هذا الرقم سيظهر للطلاب في صفحة تفاصيل الكورس عند الضغط على زر "الاشتراك" لتحويل المبلغ وإرسال إثبات الدفع.
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -947,9 +1129,161 @@ export default function AdminPanel() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.2, ease: "easeInOut" }}
-              className="overflow-auto max-h-[600px] relative rounded-2xl border border-gray-100 dark:border-[#2D2D3D]/50 scrollbar-thin"
+              className={`overflow-auto max-h-[600px] relative rounded-2xl border border-gray-100 dark:border-[#2D2D3D]/50 scrollbar-thin ${activeTab === 'payments' ? 'p-6 bg-gray-50/30 dark:bg-[#0D0D12]/30' : ''}`}
             >
-            <table className="w-full min-w-[850px] text-right border-collapse relative">
+              {activeTab === 'payments' ? (
+                <div className="space-y-6">
+                  {/* Payments Filter Header */}
+                  <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white dark:bg-[#1A1A24] p-4 rounded-2xl border border-gray-100 dark:border-[#2D2D3D] shadow-sm">
+                    <div className="flex items-center gap-3 w-full md:w-auto">
+                      <div className="relative flex-1 md:min-w-[300px]">
+                        <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          value={paymentSearch}
+                          onChange={(e) => setPaymentSearch(e.target.value)}
+                          placeholder="ابحث باسم الطالب أو رقم الهاتف..."
+                          className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pr-10 pl-4 py-2.5 outline-none focus:border-rose-500/50 focus:ring-2 focus:ring-rose-500/20 text-sm transition-all text-gray-900 dark:text-white font-bold"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="flex bg-gray-100 dark:bg-[#0D0D12] p-1 rounded-xl w-full md:w-auto overflow-x-auto">
+                      {[
+                        { id: 'all', label: 'الكل' },
+                        { id: 'pending', label: 'قيد المراجعة' },
+                        { id: 'approved', label: 'مقبول' },
+                        { id: 'rejected', label: 'مرفوض' }
+                      ].map((status) => (
+                        <button
+                          key={status.id}
+                          onClick={() => setPaymentStatusFilter(status.id as any)}
+                          className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-black whitespace-nowrap transition-all ${
+                            paymentStatusFilter === status.id 
+                              ? 'bg-white dark:bg-[#1A1A24] text-rose-600 dark:text-rose-400 shadow-sm' 
+                              : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                          }`}
+                        >
+                          {status.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Payments Grid */}
+                  {payments.filter(p => {
+                    const matchSearch = p.userName?.includes(paymentSearch) || p.senderPhone?.includes(paymentSearch) || p.senderName?.includes(paymentSearch);
+                    const matchStatus = paymentStatusFilter === 'all' || p.status === paymentStatusFilter;
+                    return matchSearch && matchStatus;
+                  }).length === 0 ? (
+                    <div className="py-16 text-center">
+                      <div className="w-20 h-20 mx-auto rounded-3xl bg-rose-50 dark:bg-rose-950/20 border border-dashed border-rose-200 dark:border-rose-900/30 flex items-center justify-center text-rose-400 mb-4">
+                        <Archive className="w-8 h-8 stroke-[1.5]" />
+                      </div>
+                      <h3 className="text-gray-900 dark:text-white font-black text-lg mb-2">لا توجد طلبات اشتراك</h3>
+                      <p className="text-sm text-gray-400 dark:text-gray-500">لم يتم العثور على أي طلبات تطابق معايير البحث الحالية.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {payments.filter(p => {
+                        const matchSearch = p.userName?.includes(paymentSearch) || p.senderPhone?.includes(paymentSearch) || p.senderName?.includes(paymentSearch);
+                        const matchStatus = paymentStatusFilter === 'all' || p.status === paymentStatusFilter;
+                        return matchSearch && matchStatus;
+                      }).map((payment) => (
+                        <div key={payment.id} className="bg-white dark:bg-[#1A1A24] rounded-2xl border border-gray-100 dark:border-[#2D2D3D] p-5 shadow-sm hover:shadow-md transition-shadow">
+                          <div className="flex flex-col md:flex-row gap-5">
+                            {/* Screenshot Preview */}
+                            <div className="w-full md:w-32 h-40 bg-gray-50 dark:bg-[#0D0D12] rounded-xl border border-gray-200 dark:border-[#2D2D3D] overflow-hidden shrink-0 group relative cursor-pointer" onClick={() => window.open(payment.screenshotUrl, '_blank')}>
+                              {payment.screenshotUrl ? (
+                                <>
+                                  <img src={payment.screenshotUrl} alt="إثبات التحويل" className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <Eye className="w-6 h-6 text-white" />
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                  <ImageIcon className="w-8 h-8 opacity-50" />
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Payment Details */}
+                            <div className="flex-1 flex flex-col justify-between">
+                              <div>
+                                <div className="flex justify-between items-start mb-2">
+                                  <div>
+                                    <h4 className="font-black text-gray-900 dark:text-white text-base">{payment.senderName}</h4>
+                                    <p className="text-xs font-bold text-gray-500 dark:text-gray-400">حساب الطالب: {payment.userName}</p>
+                                  </div>
+                                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
+                                    payment.status === 'approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' :
+                                    payment.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400' :
+                                    'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+                                  }`}>
+                                    {payment.status === 'approved' ? 'تم القبول' : payment.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
+                                  </span>
+                                </div>
+                                
+                                <div className="space-y-1.5 mt-4">
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <span className="text-gray-400"><BookOpen className="w-3.5 h-3.5" /></span>
+                                    <span className="font-bold text-gray-700 dark:text-gray-300">الكورس:</span>
+                                    <span className="font-black text-rose-600 dark:text-rose-400">{payment.courseTitle}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <span className="text-gray-400"><CreditCard className="w-3.5 h-3.5" /></span>
+                                    <span className="font-bold text-gray-700 dark:text-gray-300">المبلغ المُحول:</span>
+                                    <span className="font-black text-gray-900 dark:text-white">{payment.coursePrice} ج.م</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <span className="text-gray-400"><Phone className="w-3.5 h-3.5" /></span>
+                                    <span className="font-bold text-gray-700 dark:text-gray-300">رقم المحول:</span>
+                                    <span className="font-black text-gray-900 dark:text-white" dir="ltr">{payment.senderPhone}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {/* Actions */}
+                              {payment.status === 'pending' && (
+                                <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-[#2D2D3D]">
+                                  <button
+                                    onClick={() => handleApprovePayment(payment)}
+                                    disabled={processingPaymentId === payment.id}
+                                    className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl py-2 text-xs font-black transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                  >
+                                    {processingPaymentId === payment.id ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <>
+                                        <CheckCircle2 className="w-4 h-4" /> قبول وتفعيل
+                                      </>
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenRejectModal(payment)}
+                                    disabled={processingPaymentId === payment.id}
+                                    className="flex-1 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-900/50 dark:text-red-400 rounded-xl py-2 text-xs font-black transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 border border-red-100 dark:border-red-900/30"
+                                  >
+                                    <XCircle className="w-4 h-4" /> رفض الطلب
+                                  </button>
+                                </div>
+                              )}
+                              {payment.status === 'rejected' && payment.rejectionReason && (
+                                <div className="mt-3 p-2.5 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-100 dark:border-red-900/30 text-[10px] font-bold text-red-600 dark:text-red-400">
+                                  <span className="block mb-0.5 opacity-80">سبب الرفض:</span>
+                                  {payment.rejectionReason}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+              <table className="w-full min-w-[850px] text-right border-collapse relative">
               <thead className="sticky top-0 z-20 bg-white dark:bg-[#1A1A24]">
                 <tr className="border-b border-gray-100 dark:border-[#2D2D3D]">
                   <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">الاسم والبيانات</th>
@@ -1186,10 +1520,62 @@ export default function AdminPanel() {
                 )))}
               </tbody>
             </table>
+            )}
           </motion.div>
           </AnimatePresence>
         )}
       </div>
+
+      {/* Payment Rejection Modal */}
+      <AnimatePresence>
+        {rejectionModalOpen && selectedPayment && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setRejectionModalOpen(false)} />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-sm relative z-10 shadow-2xl overflow-hidden p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-red-50 text-red-500 dark:bg-red-950/30 flex items-center justify-center">
+                  <XCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-black text-gray-900 dark:text-white">رفض طلب الاشتراك</h3>
+                  <p className="text-xs text-gray-400">للطالب: {selectedPayment.senderName}</p>
+                </div>
+              </div>
+              
+              <form onSubmit={handleRejectPaymentSubmit}>
+                <div className="mb-4 space-y-2">
+                  <label className="text-xs font-black text-gray-700 dark:text-gray-300">الرجاء إدخال سبب الرفض لتوضيحه للطالب:</label>
+                  <textarea
+                    required
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="مثال: لقطة الشاشة غير واضحة، الرجاء رفع إثبات التحويل بشكل صحيح..."
+                    className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl p-3 outline-none focus:border-red-500/50 focus:ring-2 focus:ring-red-500/20 text-xs font-bold text-gray-900 dark:text-white min-h-[100px] resize-none"
+                  />
+                </div>
+                
+                <div className="flex gap-2 justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setRejectionModalOpen(false)}
+                    className="px-4 py-2 text-xs font-black text-gray-500 hover:bg-gray-100 dark:hover:bg-[#2D2D3D] rounded-xl transition-colors cursor-pointer bg-transparent border-0"
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={processingPaymentId === selectedPayment.id}
+                    className="px-4 py-2 text-xs font-black text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer border-0"
+                  >
+                    {processingPaymentId === selectedPayment.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                    تأكيد الرفض
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* View Modal */}
       <AnimatePresence>
