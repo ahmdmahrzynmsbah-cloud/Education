@@ -685,6 +685,8 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
       
       setActivePoll(activeList[0] || null);
       setPastPolls(completedList);
+    }, (error) => {
+      console.error("Error subscribing to polls: ", error);
     });
 
     // C. Subscribe to the stream document for general properties, whiteboard, materials & voice broadcasts
@@ -699,6 +701,8 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
         }
 
       }
+    }, (error) => {
+      console.error("Error subscribing to stream document: ", error);
     });
 
     // D. Subscribe to Raised Hands in real-time
@@ -1008,25 +1012,25 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8 text-right" dir="rtl">
+    <div className="max-w-7xl mx-auto space-y-6 text-right" dir="rtl">
       
       {/* Dynamic Lobby View */}
       {view === 'lobby' && (
-        <div className="space-y-8">
+        <div className="space-y-6">
           
           {/* Header Banner */}
-          <div className="bg-gradient-to-br from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#B8860B] rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 bg-white/10 w-fit px-3 py-1 rounded-full text-xs font-bold">
-                  <Sparkles className="w-4 h-4 text-white animate-pulse" />
+          <div className="bg-gradient-to-br from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#B8860B] rounded-xl p-4 md:p-5 text-white shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-36 h-36 bg-white/10 rounded-full blur-xl -translate-y-1/2 translate-x-1/3"></div>
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5 flex-1">
+                <div className="flex items-center gap-1 bg-white/15 w-fit px-2 py-0.5 rounded-full text-[9px] md:text-[10px] font-bold">
+                  <Sparkles className="w-3 h-3 text-white animate-pulse" />
                   <span>حصص البث المباشر التفاعلية</span>
                 </div>
-                <h2 className="text-3xl md:text-4xl font-black leading-tight">
+                <h2 className="text-base md:text-lg font-bold leading-snug">
                   تواصل تفاعلي حقيقي ومباشر بالصوت والصورة 🎙️
                 </h2>
-                <p className="text-white/80 text-sm max-w-2xl leading-relaxed">
+                <p className="text-white/85 text-[11px] md:text-xs max-w-2xl leading-relaxed">
                   هنا يجتمع المعلمون والطلاب لمناقشة الدروس ومشاركة شاشات الشرح، مع صبورة تفاعلية تدعم الرسم الفوري، ونظام تصويت تفاعلي، ومحادثات مبهجة تدعم التفاعلات الحية مثل يوتيوب تماماً!
                 </p>
               </div>
@@ -1034,9 +1038,9 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
               {isTeacher && (
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="px-6 py-4 bg-white text-[#0077B6] dark:text-amber-950 font-black rounded-2xl shadow-lg hover:scale-[1.03] transition-all flex items-center gap-2 shrink-0 cursor-pointer text-sm"
+                  className="px-4 py-2 bg-white text-[#0077B6] dark:text-amber-950 font-bold rounded-xl shadow-md hover:scale-[1.02] transition-all flex items-center gap-1 shrink-0 cursor-pointer text-[11px] md:text-xs"
                 >
-                  <Plus className="w-5 h-5 stroke-[3]" />
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                   إنشاء حصة لايف جديدة
                 </button>
               )}

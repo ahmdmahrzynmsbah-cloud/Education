@@ -1234,6 +1234,8 @@ export default function Dashboard() {
         });
       }
       isInitialLoad = false;
+    }, (error) => {
+      console.error("Error subscribing to notifications:", error);
     });
     return () => unsubscribe();
   }, [userData]);

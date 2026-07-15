@@ -106,7 +106,8 @@ export default function Auth() {
             ...baseData,
             grade: formData.get('grade') as string,
             school: formData.get('school') as string,
-            parentPhone: formData.get('parentPhone') as string
+            parentPhone: formData.get('parentPhone') as string,
+            isApproved: false
           });
         } else if (role === 'teacher') {
           // get checked grades

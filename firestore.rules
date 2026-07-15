@@ -115,5 +115,11 @@ service cloud.firestore {
         allow read, write: if isSignedIn();
       }
     }
+
+    // 15. Platform Settings collection
+    match /platform_settings/{settingId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
   }
 }

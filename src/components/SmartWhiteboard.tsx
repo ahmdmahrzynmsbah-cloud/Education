@@ -56,6 +56,8 @@ export default function SmartWhiteboard({ streamId, isTeacher, onClose }: SmartW
         ...doc.data()
       })) as Stroke[];
       setStrokes(fetchedStrokes);
+    }, (error) => {
+      console.error("Error subscribing to whiteboard strokes: ", error);
     });
     
     return () => unsubscribe();

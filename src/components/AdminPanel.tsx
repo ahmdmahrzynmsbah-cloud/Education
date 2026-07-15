@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, updateDoc, doc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, deleteDoc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { 
-  Users, BookOpen, Shield, Trash2, Edit2, Loader2, CheckCircle2, 
+  Users, BookOpen, Shield, Trash2, Edit2, Edit3, Loader2, CheckCircle2, 
   Eye, EyeOff, Printer, X, Calendar, User, Mail, Phone, Lock, 
   GraduationCap, Book, AlertTriangle, FileText, Settings, Sparkles, 
   Hash, Award, FileCheck, Check, Activity, ShieldAlert,
@@ -92,8 +92,28 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<any[]>([]);
   const [progressRecords, setProgressRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'students' | 'teachers' | 'parents'>('students');
+  const [activeTab, setActiveTab] = useState<'students' | 'teachers' | 'parents' | 'approvals' | 'settings'>('students');
   const [studentStatusFilter, setStudentStatusFilter] = useState<'active' | 'archived'>('active');
+
+  // Platform dynamic settings state
+  const [platformSettings, setPlatformSettings] = useState({
+    platformName: 'Teachland',
+    logoChar: 'T',
+    heroTitle: 'مدرستك كلها في جيبك',
+    heroSubtitle: 'شرح مبسط في فيديوهات قصيرة، اختبارات ذكية، ومنافسات مع أصحابك. كل المواد اللي محتاجها من مكان واحد، وفي أي وقت.',
+    showGradesSection: true,
+    showSubjectsSection: true,
+    showFeaturesSection: true,
+    showFaqSection: true,
+    gradesTitle: 'الصفوف الدراسية المتاحة',
+    gradesSubtitle: 'اختر صفك الدراسي المعتمد وابدأ رحلة تميزك الأكاديمي مع أقوى شرح تفاعلي ونخبة من عمالقة التدريس.',
+    subjectsTitle: 'استكشف المواد الدراسية',
+    subjectsSubtitle: 'نخبة من أفضل المعلمين يقدمون لك شرحاً وافياً ومبسطاً لكل المواد الدراسية بمختلف المراحل.',
+    faqTitle: 'الأسئلة الشائعة',
+    faqSubtitle: 'إجابات على كل استفساراتك حول المنصة'
+  });
+  const [loadingSettings, setLoadingSettings] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   // Search and Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,14 +152,22 @@ export default function AdminPanel() {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      // Fetch users and progress in parallel
-      const [usersSnap, progressSnap] = await Promise.all([
+      // Fetch users, progress, and platform settings in parallel
+      const [usersSnap, progressSnap, settingsSnap] = await Promise.all([
         getDocs(collection(db, 'users')),
         getDocs(collection(db, 'course_progress')).catch(err => {
           console.error("Error fetching course progress in background:", err);
           return { docs: [] } as any;
+        }),
+        getDoc(doc(db, 'platform_settings', 'config')).catch(err => {
+          console.error("Error fetching platform settings:", err);
+          return null;
         })
       ]);
+
+      if (settingsSnap && settingsSnap.exists()) {
+        setPlatformSettings(prev => ({ ...prev, ...settingsSnap.data() }));
+      }
 
       const usersData: any[] = [];
       usersSnap.forEach((document) => {
@@ -206,6 +234,65 @@ export default function AdminPanel() {
         </div>
       </div>
     ), { duration: 4000 });
+  };
+
+  const handleApproveStudent = async (studentId: string, name: string) => {
+    try {
+      await updateDoc(doc(db, 'users', studentId), {
+        isApproved: true
+      });
+      // Update local state
+      setUsers(prev => prev.map(u => u.id === studentId ? { ...u, isApproved: true } : u));
+      toast.success(`تم قبول وتفعيل حساب الطالب ${name} بنجاح! 🎉`);
+    } catch (err) {
+      console.error("Error approving student:", err);
+      toast.error("حدث خطأ أثناء تفعيل الحساب");
+    }
+  };
+
+  const handleRejectStudent = async (studentId: string, name: string) => {
+    if (!window.confirm(`هل أنت متأكد من رفض وحذف طلب الطالب ${name}؟`)) return;
+    try {
+      await deleteDoc(doc(db, 'users', studentId));
+      setUsers(prev => prev.filter(u => u.id !== studentId));
+      toast.success(`تم رفض وحذف طلب الطالب ${name} بنجاح`);
+    } catch (err) {
+      console.error("Error rejecting student:", err);
+      toast.error("حدث خطأ أثناء حذف طلب الطالب");
+    }
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setSavingSettings(true);
+    const formData = new FormData(e.currentTarget);
+    const updated = {
+      platformName: formData.get('platformName') as string || platformSettings.platformName,
+      logoChar: formData.get('logoChar') as string || platformSettings.logoChar,
+      heroTitle: formData.get('heroTitle') as string || platformSettings.heroTitle,
+      heroSubtitle: formData.get('heroSubtitle') as string || platformSettings.heroSubtitle,
+      showGradesSection: formData.get('showGradesSection') === 'true',
+      showSubjectsSection: formData.get('showSubjectsSection') === 'true',
+      showFeaturesSection: formData.get('showFeaturesSection') === 'true',
+      showFaqSection: formData.get('showFaqSection') === 'true',
+      gradesTitle: formData.get('gradesTitle') as string || platformSettings.gradesTitle,
+      gradesSubtitle: formData.get('gradesSubtitle') as string || platformSettings.gradesSubtitle,
+      subjectsTitle: formData.get('subjectsTitle') as string || platformSettings.subjectsTitle,
+      subjectsSubtitle: formData.get('subjectsSubtitle') as string || platformSettings.subjectsSubtitle,
+      faqTitle: formData.get('faqTitle') as string || platformSettings.faqTitle,
+      faqSubtitle: formData.get('faqSubtitle') as string || platformSettings.faqSubtitle,
+    };
+
+    try {
+      await setDoc(doc(db, 'platform_settings', 'config'), updated);
+      setPlatformSettings(updated);
+      toast.success("تم حفظ إعدادات المنصة وتحديثها بنجاح! ✨");
+    } catch (err) {
+      console.error("Error saving settings:", err);
+      toast.error("فشل في حفظ إعدادات المنصة");
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   const confirmDelete = (userId: string) => {
@@ -277,11 +364,15 @@ export default function AdminPanel() {
       if (activeTab === 'students') {
         const isStudent = u.role === 'student' || !u.role;
         if (!isStudent) return false;
+        if (u.isApproved === false) return false;
         if (studentStatusFilter === 'active') {
           return !u.isArchived;
         } else {
           return u.isArchived === true;
         }
+      }
+      if (activeTab === 'approvals') {
+        return u.role === 'student' && u.isApproved === false;
       }
       if (activeTab === 'teachers') return u.role === 'teacher';
       if (activeTab === 'parents') return u.role === 'parent';
@@ -293,13 +384,13 @@ export default function AdminPanel() {
       const nameMatch = (u.name || '').toLowerCase().includes(query);
       const emailMatch = (u.email || '').toLowerCase().includes(query);
       const phoneMatch = (u.phone || '').toLowerCase().includes(query);
-      const gradeMatch = activeTab === 'students' && (u.grade || '').toLowerCase().includes(query);
+      const gradeMatch = (activeTab === 'students' || activeTab === 'approvals') && (u.grade || '').toLowerCase().includes(query);
       const subjectMatch = activeTab === 'teachers' && (u.subject || '').toLowerCase().includes(query);
       return nameMatch || emailMatch || phoneMatch || gradeMatch || subjectMatch;
     })
     .filter(u => {
       if (gradeFilter === 'all') return true;
-      if (activeTab === 'students') {
+      if (activeTab === 'students' || activeTab === 'approvals') {
         return u.grade === gradeFilter;
       }
       if (activeTab === 'teachers') {
@@ -390,7 +481,7 @@ export default function AdminPanel() {
 
       {/* Main Table Container */}
       <div className="bg-white dark:bg-[#1A1A24] rounded-3xl p-6 border border-gray-200 dark:border-[#2D2D3D] shadow-sm">
-        <div className="flex gap-4 border-b border-gray-100 dark:border-[#2D2D3D] pb-3 mb-6">
+        <div className="flex flex-wrap gap-4 border-b border-gray-100 dark:border-[#2D2D3D] pb-3 mb-6">
           <button
             onClick={() => setActiveTab('students')}
             className={`pb-2 text-sm font-black transition-all relative ${
@@ -399,7 +490,7 @@ export default function AdminPanel() {
                 : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
             }`}
           >
-            الطلاب ({users.filter(u => (u.role === 'student' || !u.role) && !u.isArchived).length})
+            الطلاب ({users.filter(u => (u.role === 'student' || !u.role) && !u.isArchived && u.isApproved !== false).length})
             {activeTab === 'students' && (
               <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
             )}
@@ -427,6 +518,32 @@ export default function AdminPanel() {
           >
             أولياء الأمور ({parentsCount})
             {activeTab === 'parents' && (
+              <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('approvals')}
+            className={`pb-2 text-sm font-black transition-all relative ${
+              activeTab === 'approvals'
+                ? 'text-[#00B4D8] dark:text-[#D4AF37]'
+                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+            }`}
+          >
+            بانتظار القبول ({users.filter(u => u.role === 'student' && u.isApproved === false).length})
+            {activeTab === 'approvals' && (
+              <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`pb-2 text-sm font-black transition-all relative ${
+              activeTab === 'settings'
+                ? 'text-[#00B4D8] dark:text-[#D4AF37]'
+                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+            }`}
+          >
+            إعدادات المنصة
+            {activeTab === 'settings' && (
               <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
             )}
           </button>
@@ -461,39 +578,42 @@ export default function AdminPanel() {
         )}
 
         {/* Search and Filters Section */}
-        <div className="bg-gray-50/50 dark:bg-[#0D0D12]/30 p-4 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] mb-6 flex flex-col gap-4 animate-in fade-in duration-200">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-            {/* Search Input */}
-            <div className="relative md:col-span-5">
-              <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
-              <input
-                type="text"
-                placeholder={
-                  activeTab === 'students' 
-                    ? "بحث عن طالب بالاسم، الهاتف، البريد أو الصف..." 
-                    : activeTab === 'teachers' 
-                      ? "بحث عن معلم بالاسم، الهاتف، البريد أو المادة..." 
-                      : "بحث عن ولي أمر بالاسم، الهاتف أو البريد..."
-                }
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pr-10 pl-4 py-2.5 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:ring-1 focus:ring-[#00B4D8] dark:focus:ring-[#D4AF37] transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+        {activeTab !== 'settings' && (
+          <div className="bg-gray-50/50 dark:bg-[#0D0D12]/30 p-4 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] mb-6 flex flex-col gap-4 animate-in fade-in duration-200">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+              {/* Search Input */}
+              <div className="relative md:col-span-5">
+                <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                <input
+                  type="text"
+                  placeholder={
+                    activeTab === 'students' 
+                      ? "بحث عن طالب بالاسم، الهاتف، البريد أو الصف..." 
+                      : activeTab === 'teachers' 
+                        ? "بحث عن معلم بالاسم، الهاتف، البريد أو المادة..." 
+                        : activeTab === 'approvals'
+                          ? "بحث عن طالب بانتظار القبول بالاسم أو الهاتف..."
+                          : "بحث عن ولي أمر بالاسم، الهاتف أو البريد..."
+                  }
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pr-10 pl-4 py-2.5 text-sm font-bold text-gray-900 dark:text-white outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:ring-1 focus:ring-[#00B4D8] dark:focus:ring-[#D4AF37] transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
-            {/* Grade Filter (Visible for students and teachers) */}
-            {(activeTab === 'students' || activeTab === 'teachers') ? (
-              <div className="relative md:col-span-3">
-                <Filter className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
-                <select
+              {/* Grade Filter (Visible for students, teachers, and approvals) */}
+              {(activeTab === 'students' || activeTab === 'teachers' || activeTab === 'approvals') ? (
+                <div className="relative md:col-span-3">
+                  <Filter className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
+                  <select
                   value={gradeFilter}
                   onChange={(e) => setGradeFilter(e.target.value)}
                   className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pr-10 pl-4 py-2.5 text-sm font-bold text-gray-700 dark:text-gray-300 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] transition-all appearance-none cursor-pointer"
@@ -595,11 +715,225 @@ export default function AdminPanel() {
             </div>
           )}
         </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <Loader2 className="w-8 h-8 text-[#00B4D8] dark:text-[#D4AF37] animate-spin" />
           </div>
+        ) : activeTab === 'settings' ? (
+          <form onSubmit={handleSaveSettings} className="space-y-6 max-w-4xl mx-auto py-4 animate-in fade-in duration-300">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Identity Settings Card */}
+              <div className="bg-gray-50/50 dark:bg-[#0D0D12]/30 p-6 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] space-y-4">
+                <h3 className="text-base font-black text-gray-800 dark:text-white flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-[#00B4D8] dark:text-[#D4AF37]" /> هوية المنصة الأساسية
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">اسم المنصة التعليمية</label>
+                    <input
+                      type="text"
+                      name="platformName"
+                      defaultValue={platformSettings.platformName}
+                      className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2.5 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">حرف الشعار (اللوجو)</label>
+                    <input
+                      type="text"
+                      name="logoChar"
+                      maxLength={2}
+                      defaultValue={platformSettings.logoChar}
+                      className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2.5 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-sm"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Visibility Settings Card */}
+              <div className="bg-gray-50/50 dark:bg-[#0D0D12]/30 p-6 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] space-y-4">
+                <h3 className="text-base font-black text-gray-800 dark:text-white flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-purple-500" /> عرض الأقسام في الصفحة الرئيسية
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 block">قسم الصفوف الدراسية</label>
+                    <select
+                      name="showGradesSection"
+                      defaultValue={platformSettings.showGradesSection ? 'true' : 'false'}
+                      className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs cursor-pointer"
+                    >
+                      <option value="true">تفعيل وعرض</option>
+                      <option value="false">إخفاء</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 block">قسم المواد الدراسية</label>
+                    <select
+                      name="showSubjectsSection"
+                      defaultValue={platformSettings.showSubjectsSection ? 'true' : 'false'}
+                      className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs cursor-pointer"
+                    >
+                      <option value="true">تفعيل وعرض</option>
+                      <option value="false">إخفاء</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 block">قسم مميزات المنصة</label>
+                    <select
+                      name="showFeaturesSection"
+                      defaultValue={platformSettings.showFeaturesSection ? 'true' : 'false'}
+                      className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs cursor-pointer"
+                    >
+                      <option value="true">تفعيل وعرض</option>
+                      <option value="false">إخفاء</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 block">قسم الأسئلة الشائعة</label>
+                    <select
+                      name="showFaqSection"
+                      defaultValue={platformSettings.showFaqSection ? 'true' : 'false'}
+                      className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs cursor-pointer"
+                    >
+                      <option value="true">تفعيل وعرض</option>
+                      <option value="false">إخفاء</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hero Customization Card */}
+              <div className="bg-gray-50/50 dark:bg-[#0D0D12]/30 p-6 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] md:col-span-2 space-y-4">
+                <h3 className="text-base font-black text-gray-800 dark:text-white flex items-center gap-2">
+                  <Award className="w-5 h-5 text-amber-500" /> تخصيص واجهة الترحيب الرئيسية (Hero Section)
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">عنوان الترحيب الرئيسي</label>
+                    <input
+                      type="text"
+                      name="heroTitle"
+                      defaultValue={platformSettings.heroTitle}
+                      className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2.5 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">العنوان الفرعي ووصف المنصة</label>
+                    <textarea
+                      name="heroSubtitle"
+                      rows={3}
+                      defaultValue={platformSettings.heroSubtitle}
+                      className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2.5 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-sm leading-relaxed"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Titles and Headers Card */}
+              <div className="bg-gray-50/50 dark:bg-[#0D0D12]/30 p-6 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] md:col-span-2 space-y-4">
+                <h3 className="text-base font-black text-gray-800 dark:text-white flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-[#00B4D8]" /> تخصيص مسميات ووصف الأقسام بالواجهة
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black text-[#00B4D8]">إعدادات قسم الصفوف الدراسية</h4>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 block mb-1">عنوان القسم</label>
+                      <input
+                        type="text"
+                        name="gradesTitle"
+                        defaultValue={platformSettings.gradesTitle}
+                        className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 block mb-1">الوصف الفرعي للقسم</label>
+                      <textarea
+                        name="gradesSubtitle"
+                        rows={2}
+                        defaultValue={platformSettings.gradesSubtitle}
+                        className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black text-purple-500">إعدادات قسم المواد الدراسية</h4>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 block mb-1">عنوان القسم</label>
+                      <input
+                        type="text"
+                        name="subjectsTitle"
+                        defaultValue={platformSettings.subjectsTitle}
+                        className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 block mb-1">الوصف الفرعي للقسم</label>
+                      <textarea
+                        name="subjectsSubtitle"
+                        rows={2}
+                        defaultValue={platformSettings.subjectsSubtitle}
+                        className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 md:col-span-2 border-t border-gray-100 dark:border-[#2D2D3D] pt-4">
+                    <h4 className="text-xs font-black text-amber-500">إعدادات قسم الأسئلة الشائعة (FAQ)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 block mb-1">عنوان القسم</label>
+                        <input
+                          type="text"
+                          name="faqTitle"
+                          defaultValue={platformSettings.faqTitle}
+                          className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 block mb-1">الوصف الفرعي للقسم</label>
+                        <input
+                          type="text"
+                          name="faqSubtitle"
+                          defaultValue={platformSettings.faqSubtitle}
+                          className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Action Save Button */}
+            <div className="flex justify-end pt-4 border-t border-gray-100 dark:border-[#2D2D3D]">
+              <button
+                type="submit"
+                disabled={savingSettings}
+                className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white dark:text-[#0D0D12] font-black py-3.5 px-10 rounded-xl hover:bg-[#0077B6] dark:hover:bg-[#B8860B] hover:-translate-y-0.5 shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+              >
+                {savingSettings ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> جاري الحفظ والتطبيق...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" /> حفظ كافة الإعدادات وتطبيقها فوراً
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         ) : (
           <div className="overflow-auto max-h-[600px] relative rounded-2xl border border-gray-100 dark:border-[#2D2D3D]/50 scrollbar-thin">
             <table className="w-full min-w-[850px] text-right border-collapse relative">
@@ -608,8 +942,14 @@ export default function AdminPanel() {
                   <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">الاسم والبيانات</th>
                   <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">البريد الإلكتروني</th>
                   <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">رقم الهاتف</th>
-                  {activeTab === 'students' && <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">الصف الدراسي</th>}
+                  {(activeTab === 'students' || activeTab === 'approvals') && <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">الصف الدراسي</th>}
                   {activeTab === 'teachers' && <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">المادة</th>}
+                  {activeTab === 'approvals' && (
+                    <>
+                      <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">المحافظة / المدرسة</th>
+                      <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">هاتف ولي الأمر</th>
+                    </>
+                  )}
                   <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">تاريخ التسجيل</th>
                   <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-center shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">التحكم والعمليات</th>
                 </tr>
@@ -617,7 +957,7 @@ export default function AdminPanel() {
               <tbody>
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={activeTab === 'students' || activeTab === 'teachers' ? 6 : 5} className="py-16 text-center text-gray-400 dark:text-gray-500 font-bold text-sm">
+                    <td colSpan={activeTab === 'approvals' ? 8 : (activeTab === 'students' || activeTab === 'teachers' ? 6 : 5)} className="py-16 text-center text-gray-400 dark:text-gray-500 font-bold text-sm">
                       <div className="flex flex-col items-center justify-center gap-3">
                         <div className="w-16 h-16 rounded-3xl bg-gray-50 dark:bg-[#0D0D12] border border-dashed border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-400">
                           <SlidersHorizontal className="w-7 h-7 stroke-[1.5]" />
@@ -664,7 +1004,7 @@ export default function AdminPanel() {
                     <td className="py-2.5 px-4 text-xs font-bold text-gray-600 dark:text-gray-400" dir="ltr">{user.phone || '-'}</td>
                     
                     {/* Modern pill styled attributes */}
-                    {activeTab === 'students' && (
+                    {(activeTab === 'students' || activeTab === 'approvals') && (
                       <td className="py-2.5 px-4">
                         <span className="bg-blue-50 text-[#00B4D8] dark:bg-blue-950/40 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50 py-0.5 px-2.5 rounded-lg text-[11px] font-black inline-block">
                           {user.grade || '-'}
@@ -677,6 +1017,16 @@ export default function AdminPanel() {
                           {user.subject || '-'}
                         </span>
                       </td>
+                    )}
+                    {activeTab === 'approvals' && (
+                      <>
+                        <td className="py-2.5 px-4 text-xs font-bold text-gray-600 dark:text-gray-400">
+                          {user.governorate || '-'} / {user.school || '-'}
+                        </td>
+                        <td className="py-2.5 px-4 text-xs font-bold text-gray-600 dark:text-gray-400" dir="ltr">
+                          {user.parentPhone || '-'}
+                        </td>
+                      </>
                     )}
                     
                     <td className="py-2.5 px-4">
