@@ -1193,8 +1193,18 @@ export default function AdminPanel() {
                         <div key={payment.id} className="bg-white dark:bg-[#1A1A24] rounded-2xl border border-gray-100 dark:border-[#2D2D3D] p-5 shadow-sm hover:shadow-md transition-shadow">
                           <div className="flex flex-col md:flex-row gap-5">
                             {/* Screenshot Preview */}
-                            <div className="w-full md:w-32 h-40 bg-gray-50 dark:bg-[#0D0D12] rounded-xl border border-gray-200 dark:border-[#2D2D3D] overflow-hidden shrink-0 group relative cursor-pointer" onClick={() => window.open(payment.screenshotUrl, '_blank')}>
-                              {payment.screenshotUrl ? (
+                            <div className="w-full md:w-32 h-40 bg-gray-50 dark:bg-[#0D0D12] rounded-xl border border-gray-200 dark:border-[#2D2D3D] overflow-hidden shrink-0 group relative cursor-pointer" onClick={() => payment.screenshotUrl && !['uploading...', 'failed'].includes(payment.screenshotUrl) && window.open(payment.screenshotUrl, '_blank')}>
+                              {payment.screenshotUrl === 'uploading...' ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 gap-2 bg-gray-100 dark:bg-[#2D2D3D]">
+                                  <Loader2 className="w-6 h-6 animate-spin text-[#00B4D8]" />
+                                  <span className="text-xs font-bold text-gray-500">جاري الرفع...</span>
+                                </div>
+                              ) : payment.screenshotUrl === 'failed' ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center text-rose-500 gap-2 bg-rose-50 dark:bg-rose-900/10">
+                                  <AlertTriangle className="w-6 h-6" />
+                                  <span className="text-xs font-bold">فشل الرفع</span>
+                                </div>
+                              ) : payment.screenshotUrl ? (
                                 <>
                                   <img src={payment.screenshotUrl} alt="إثبات التحويل" className="w-full h-full object-cover" />
                                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
