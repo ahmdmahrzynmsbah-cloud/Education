@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, updateDoc, doc, deleteDoc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, deleteDoc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { 
   Users, BookOpen, Shield, Trash2, Edit2, Edit3, Loader2, CheckCircle2, 
@@ -146,56 +146,60 @@ export default function AdminPanel() {
   const [userToDelete, setUserToDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    // 1. Fetch other static configurations/progress once on mount
+    const fetchOtherData = async () => {
+      try {
+        const [progressSnap, settingsSnap] = await Promise.all([
+          getDocs(collection(db, 'course_progress')).catch(err => {
+            console.error("Error fetching course progress in background:", err);
+            return { docs: [] } as any;
+          }),
+          getDoc(doc(db, 'platform_settings', 'config')).catch(err => {
+            console.error("Error fetching platform settings:", err);
+            return null;
+          })
+        ]);
 
-  const fetchUsers = async () => {
-    try {
-      setLoading(true);
-      // Fetch users, progress, and platform settings in parallel
-      const [usersSnap, progressSnap, settingsSnap] = await Promise.all([
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'course_progress')).catch(err => {
-          console.error("Error fetching course progress in background:", err);
-          return { docs: [] } as any;
-        }),
-        getDoc(doc(db, 'platform_settings', 'config')).catch(err => {
-          console.error("Error fetching platform settings:", err);
-          return null;
-        })
-      ]);
+        if (settingsSnap && settingsSnap.exists()) {
+          setPlatformSettings(prev => ({ ...prev, ...settingsSnap.data() }));
+        }
 
-      if (settingsSnap && settingsSnap.exists()) {
-        setPlatformSettings(prev => ({ ...prev, ...settingsSnap.data() }));
+        const progressData: any[] = [];
+        progressSnap.forEach((doc: any) => {
+          progressData.push({ id: doc.id, ...doc.data() });
+        });
+        setProgressRecords(progressData);
+      } catch (error) {
+        console.error("Error fetching other admin configurations:", error);
       }
+    };
 
+    fetchOtherData();
+
+    // 2. Real-time listener for the users collection
+    setLoading(true);
+    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
       const usersData: any[] = [];
-      usersSnap.forEach((document) => {
+      snapshot.forEach((document) => {
         const data = document.data();
         let createdAt = data.createdAt;
         if (!createdAt) {
           createdAt = new Date().toISOString();
-          // Update in background so the UI doesn't wait or lag
-          updateDoc(doc(db, 'users', document.id), { createdAt }).catch(err => {
-            console.error("Error auto-populating missing createdAt:", err);
-          });
         }
         usersData.push({ id: document.id, ...data, createdAt });
       });
       setUsers(usersData);
-
-      const progressData: any[] = [];
-      progressSnap.forEach((doc: any) => {
-        progressData.push({ id: doc.id, ...doc.data() });
-      });
-      setProgressRecords(progressData);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      toast.error('حدث خطأ أثناء جلب البيانات');
-    } finally {
       setLoading(false);
-    }
-  };
+    }, (error) => {
+      console.error("Error listening to users in real-time:", error);
+      setLoading(false);
+      toast.error('حدث خطأ أثناء جلب وتحديث بيانات المستخدمين');
+    });
+
+    return () => {
+      unsubscribeUsers();
+    };
+  }, []);
 
   const showSuccessToast = (message: string, type: 'edit' | 'delete', userName?: string) => {
     toast.custom((t) => (
@@ -372,10 +376,10 @@ export default function AdminPanel() {
         }
       }
       if (activeTab === 'approvals') {
-        return u.role === 'student' && u.isApproved === false;
+        return u.isApproved === false;
       }
-      if (activeTab === 'teachers') return u.role === 'teacher';
-      if (activeTab === 'parents') return u.role === 'parent';
+      if (activeTab === 'teachers') return u.role === 'teacher' && u.isApproved !== false;
+      if (activeTab === 'parents') return u.role === 'parent' && u.isApproved !== false;
       return false;
     })
     .filter(u => {
@@ -385,7 +389,7 @@ export default function AdminPanel() {
       const emailMatch = (u.email || '').toLowerCase().includes(query);
       const phoneMatch = (u.phone || '').toLowerCase().includes(query);
       const gradeMatch = (activeTab === 'students' || activeTab === 'approvals') && (u.grade || '').toLowerCase().includes(query);
-      const subjectMatch = activeTab === 'teachers' && (u.subject || '').toLowerCase().includes(query);
+      const subjectMatch = (activeTab === 'teachers' || activeTab === 'approvals') && (u.subject || '').toLowerCase().includes(query);
       return nameMatch || emailMatch || phoneMatch || gradeMatch || subjectMatch;
     })
     .filter(u => {
@@ -422,9 +426,10 @@ export default function AdminPanel() {
       return 0;
     });
 
-  const studentsCount = users.filter(u => u.role === 'student' || !u.role).length;
-  const teachersCount = users.filter(u => u.role === 'teacher').length;
-  const parentsCount = users.filter(u => u.role === 'parent').length;
+  const studentsCount = users.filter(u => (u.role === 'student' || !u.role) && u.isApproved !== false).length;
+  const teachersCount = users.filter(u => u.role === 'teacher' && u.isApproved !== false).length;
+  const parentsCount = users.filter(u => u.role === 'parent' && u.isApproved !== false).length;
+  const pendingApprovalsCount = users.filter(u => u.isApproved === false).length;
 
   return (
     <div className="space-y-6 print:hidden">
@@ -529,7 +534,7 @@ export default function AdminPanel() {
                 : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
             }`}
           >
-            بانتظار القبول ({users.filter(u => u.role === 'student' && u.isApproved === false).length})
+            بانتظار القبول ({pendingApprovalsCount})
             {activeTab === 'approvals' && (
               <motion.div layoutId="adminTab" className="absolute -bottom-3.5 left-0 right-0 h-1 bg-[#00B4D8] dark:bg-[#D4AF37] rounded-t-full" />
             )}
@@ -935,14 +940,23 @@ export default function AdminPanel() {
             </div>
           </form>
         ) : (
-          <div className="overflow-auto max-h-[600px] relative rounded-2xl border border-gray-100 dark:border-[#2D2D3D]/50 scrollbar-thin">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="overflow-auto max-h-[600px] relative rounded-2xl border border-gray-100 dark:border-[#2D2D3D]/50 scrollbar-thin"
+            >
             <table className="w-full min-w-[850px] text-right border-collapse relative">
               <thead className="sticky top-0 z-20 bg-white dark:bg-[#1A1A24]">
                 <tr className="border-b border-gray-100 dark:border-[#2D2D3D]">
                   <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">الاسم والبيانات</th>
                   <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">البريد الإلكتروني</th>
                   <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">رقم الهاتف</th>
-                  {(activeTab === 'students' || activeTab === 'approvals') && <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">الصف الدراسي</th>}
+                  {activeTab === 'students' && <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">الصف الدراسي</th>}
+                  {activeTab === 'approvals' && <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">نوع الحساب / التفاصيل</th>}
                   {activeTab === 'teachers' && <th className="sticky top-0 bg-white dark:bg-[#1A1A24] py-3.5 px-4 text-xs font-black text-gray-400 z-10 text-right shadow-[0_1px_0_rgba(0,0,0,0.05)] dark:shadow-[0_1px_0_rgba(255,255,255,0.05)]">المادة</th>}
                   {activeTab === 'approvals' && (
                     <>
@@ -1003,12 +1017,30 @@ export default function AdminPanel() {
                     <td className="py-2.5 px-4 text-xs font-bold text-gray-600 dark:text-gray-400">{user.email}</td>
                     <td className="py-2.5 px-4 text-xs font-bold text-gray-600 dark:text-gray-400" dir="ltr">{user.phone || '-'}</td>
                     
-                    {/* Modern pill styled attributes */}
-                    {(activeTab === 'students' || activeTab === 'approvals') && (
+                     {/* Modern pill styled attributes */}
+                    {activeTab === 'students' && (
                       <td className="py-2.5 px-4">
                         <span className="bg-blue-50 text-[#00B4D8] dark:bg-blue-950/40 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50 py-0.5 px-2.5 rounded-lg text-[11px] font-black inline-block">
                           {user.grade || '-'}
                         </span>
+                      </td>
+                    )}
+                    {activeTab === 'approvals' && (
+                      <td className="py-2.5 px-4">
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`py-0.5 px-2 rounded-lg text-[10px] font-black border ${
+                            user.role === 'teacher' 
+                              ? 'bg-purple-50 text-purple-600 border-purple-100 dark:bg-purple-950/40 dark:text-purple-400 dark:border-purple-900/50' 
+                              : user.role === 'parent' 
+                              ? 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-900/50' 
+                              : 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-900/50'
+                          }`}>
+                            {user.role === 'teacher' ? 'معلم' : user.role === 'parent' ? 'ولي أمر' : 'طالب'}
+                          </span>
+                          <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400">
+                            {user.role === 'teacher' ? (user.subject || '-') : user.role === 'parent' ? `هاتف الطالب: ${user.studentPhone || '-'}` : (user.grade || '-')}
+                          </span>
+                        </div>
                       </td>
                     )}
                     {activeTab === 'teachers' && (
@@ -1039,80 +1071,114 @@ export default function AdminPanel() {
                     {/* Action buttons */}
                     <td className="py-2.5 px-4 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        <button 
-                          onClick={() => {
-                            setSelectedUser(user);
-                            setShowModalPassword(false);
-                            setViewModalOpen(true);
-                          }}
-                          className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                          title="عرض البيانات الشاملة"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setSelectedUser(user);
-                            setEditFormData(user);
-                            setEditModalOpen(true);
-                          }}
-                          className="p-1.5 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
-                          title="تعديل الحساب"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setSelectedUser(user);
-                            // Auto fill title
-                            setCustomReportTitle(
-                              user.role === 'student' ? 'تقرير الملف الدراسي للطالب' :
-                              user.role === 'teacher' ? 'تقرير السجل المهني للمعلم' : 'تقرير السجل العام لولي الأمر'
-                            );
-                            setPrintModalOpen(true);
-                          }}
-                          className="p-1.5 text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
-                          title="معاينة وطباعة تقرير رسمي"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
-                        {(user.role === 'student' || !user.role) ? (
+                        {activeTab === 'approvals' ? (
                           <>
-                            {!user.isArchived ? (
-                              <button 
-                                onClick={() => handleArchiveToggle(user, true)}
-                                className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors animate-in fade-in zoom-in duration-200"
-                                title="أرشفة حساب الطالب"
-                              >
-                                <Archive className="w-4 h-4" />
-                              </button>
-                            ) : (
-                              <>
-                                <button 
-                                  onClick={() => handleArchiveToggle(user, false)}
-                                  className="p-1.5 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors animate-in fade-in zoom-in duration-200"
-                                  title="استعادة حساب الطالب"
-                                >
-                                  <RotateCcw className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  onClick={() => confirmDelete(user.id)}
-                                  className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors animate-in fade-in zoom-in duration-200"
-                                  title="حذف الحساب نهائياً من الأرشيف"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
+                            <button
+                              onClick={() => handleApproveStudent(user.id, user.name)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-900/50 rounded-xl transition-all font-black text-xs shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
+                              title="قبول وتفعيل حساب الطالب"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>قبول وتفعيل</span>
+                            </button>
+                            <button
+                              onClick={() => handleRejectStudent(user.id, user.name)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-900/50 rounded-xl transition-all font-black text-xs shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
+                              title="رفض وحذف طلب التسجيل"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>رفض</span>
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setSelectedUser(user);
+                                setShowModalPassword(false);
+                                setViewModalOpen(true);
+                              }}
+                              className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors border border-gray-100 dark:border-[#2D2D3D]"
+                              title="عرض البيانات الشاملة"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
                           </>
                         ) : (
-                          <button 
-                            onClick={() => confirmDelete(user.id)}
-                            className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                            title="حذف الحساب نهائياً"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <>
+                            <button 
+                              onClick={() => {
+                                setSelectedUser(user);
+                                setShowModalPassword(false);
+                                setViewModalOpen(true);
+                              }}
+                              className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                              title="عرض البيانات الشاملة"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setSelectedUser(user);
+                                setEditFormData(user);
+                                setEditModalOpen(true);
+                              }}
+                              className="p-1.5 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                              title="تعديل الحساب"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setSelectedUser(user);
+                                // Auto fill title
+                                setCustomReportTitle(
+                                  user.role === 'student' ? 'تقرير الملف الدراسي للطالب' :
+                                  user.role === 'teacher' ? 'تقرير السجل المهني للمعلم' : 'تقرير السجل العام لولي الأمر'
+                                );
+                                setPrintModalOpen(true);
+                              }}
+                              className="p-1.5 text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                              title="معاينة وطباعة تقرير رسمي"
+                            >
+                              <Printer className="w-4 h-4" />
+                            </button>
+                            {(user.role === 'student' || !user.role) ? (
+                              <>
+                                {!user.isArchived ? (
+                                  <button 
+                                    onClick={() => handleArchiveToggle(user, true)}
+                                    className="p-1.5 text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-lg transition-colors animate-in fade-in zoom-in duration-200"
+                                    title="أرشفة حساب الطالب"
+                                  >
+                                    <Archive className="w-4 h-4" />
+                                  </button>
+                                ) : (
+                                  <>
+                                    <button 
+                                      onClick={() => handleArchiveToggle(user, false)}
+                                      className="p-1.5 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors animate-in fade-in zoom-in duration-200"
+                                      title="استعادة حساب الطالب"
+                                    >
+                                      <RotateCcw className="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                      onClick={() => confirmDelete(user.id)}
+                                      className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors animate-in fade-in zoom-in duration-200"
+                                      title="حذف الحساب نهائياً من الأرشيف"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              <button 
+                                onClick={() => confirmDelete(user.id)}
+                                className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                title="حذف الحساب نهائياً"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>
@@ -1120,7 +1186,8 @@ export default function AdminPanel() {
                 )))}
               </tbody>
             </table>
-          </div>
+          </motion.div>
+          </AnimatePresence>
         )}
       </div>
 

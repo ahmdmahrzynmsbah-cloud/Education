@@ -128,7 +128,8 @@ export default function Auth() {
             subject: teacherSubject,
             nationalId: formData.get('nationalId') as string,
             dateOfBirth: formData.get('dateOfBirth') as string,
-            teachingGrades: finalGrades
+            teachingGrades: finalGrades,
+            isApproved: false
           });
 
           // Send notifications to students who are in the teacher's teachingGrades
@@ -157,11 +158,13 @@ export default function Auth() {
         } else if (role === 'parent') {
           await setDoc(doc(db, 'users', user.uid), {
             ...baseData,
-            studentPhone: formData.get('studentPhone') as string
+            studentPhone: formData.get('studentPhone') as string,
+            isApproved: false
           });
         } else if (role === 'admin') {
           await setDoc(doc(db, 'users', user.uid), {
-            ...baseData
+            ...baseData,
+            isApproved: true
           });
         }
         navigate('/dashboard');

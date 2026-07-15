@@ -4,7 +4,7 @@ import {
   User, Phone, Mail, MapPin, School, GraduationCap, 
   Lock, Trash2, Key, Save, AlertTriangle, ShieldAlert, Shield, 
   BookOpen, Calendar, IdCard, Sparkles, Check, Download, RefreshCw, Award,
-  BarChart2, Trophy, TrendingUp, CheckCircle, Play, Users, Percent, Star, ChevronLeft, Zap
+  BarChart2, Trophy, TrendingUp, CheckCircle, Play, Users, Percent, Star, ChevronLeft, Zap, LogOut
 } from 'lucide-react';
 import { updateDoc, doc, deleteDoc, getDocs, collection, query, where } from 'firebase/firestore';
 import { updatePassword, deleteUser, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
@@ -512,6 +512,20 @@ export default function ProfileSection({ userData, onUpdateUserData }: ProfileSe
             }`}
           >
             <Trash2 className="w-4 h-4 shrink-0" /> منطقة الخطر
+          </button>
+
+          <button
+            onClick={async () => {
+              try {
+                await auth.signOut();
+                navigate('/login');
+              } catch (e) {
+                toast.error('حدث خطأ أثناء تسجيل الخروج');
+              }
+            }}
+            className="flex-1 md:flex-none flex items-center justify-center md:justify-start gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 whitespace-nowrap cursor-pointer"
+          >
+            <LogOut className="w-4 h-4 shrink-0 text-red-500" /> تسجيل الخروج
           </button>
         </div>
 

@@ -923,24 +923,50 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+    let unsubscribeSnapshot: (() => void) | null = null;
+    let timeoutId: any = null;
+
+    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
       if (user) {
-        try {
-          const docRef = doc(db, 'users', user.uid);
-          const docSnap = await getDoc(docRef);
+        const docRef = doc(db, 'users', user.uid);
+        
+        // Safety timeout to prevent infinite loader if the document genuinely does not exist or fails to load
+        timeoutId = setTimeout(() => {
+          setLoading(false);
+        }, 5000);
+
+        unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
+            if (timeoutId) clearTimeout(timeoutId);
             setUserData({ id: docSnap.id, ...docSnap.data() });
+            setLoading(false);
+          } else {
+            console.log("User document does not exist in Firestore yet, waiting for registration to write it...");
           }
-        } catch (error) {
-          console.error("Error fetching user data:", error);
-        }
+        }, (error) => {
+          console.error("Error listening to user data in real-time:", error);
+          if (timeoutId) clearTimeout(timeoutId);
+          setLoading(false);
+        });
       } else {
+        if (timeoutId) clearTimeout(timeoutId);
+        if (unsubscribeSnapshot) {
+          unsubscribeSnapshot();
+          unsubscribeSnapshot = null;
+        }
+        setUserData(null);
         navigate('/login');
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (timeoutId) clearTimeout(timeoutId);
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+      }
+    };
   }, [navigate]);
 
   // Fetch transactions list
@@ -1257,6 +1283,87 @@ export default function Dashboard() {
     return <LuxuriousLoader fullScreen size="lg" />;
   }
 
+  // Intercept unapproved users in real-time
+  if (userData?.isApproved === false) {
+    const getPendingMessage = () => {
+      if (userData.role === 'student') {
+        return (
+          <>
+            تم إنشاء حسابك بنجاح كطالب في <span className="text-[#00B4D8] dark:text-[#D4AF37] font-black">Teachland</span>.
+            <br />
+            يرجى الانتظار حتى يقوم المعلم أو مدير المنصة بمراجعة وتفعيل حسابك.
+          </>
+        );
+      } else if (userData.role === 'teacher') {
+        return (
+          <>
+            تم إنشاء حسابك بنجاح كمعلم في <span className="text-[#00B4D8] dark:text-[#D4AF37] font-black">Teachland</span>.
+            <br />
+            يرجى الانتظار حتى يقوم مدير المنصة بمراجعة وتفعيل حسابك لتتمكن من رفع المحاضرات وتدريس الكورسات.
+          </>
+        );
+      } else if (userData.role === 'parent') {
+        return (
+          <>
+            تم إنشاء حسابك بنجاح كولي أمر في <span className="text-[#00B4D8] dark:text-[#D4AF37] font-black">Teachland</span>.
+            <br />
+            يرجى الانتظار حتى يقوم مدير المنصة بمراجعة وتفعيل حسابك لتتمكن من متابعة أبنائك.
+          </>
+        );
+      } else {
+        return (
+          <>
+            تم إنشاء حسابك بنجاح في <span className="text-[#00B4D8] dark:text-[#D4AF37] font-black">Teachland</span>.
+            <br />
+            يرجى الانتظار حتى يقوم مدير المنصة بمراجعة وتفعيل حسابك بالكامل.
+          </>
+        );
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-[#0D0D12] text-gray-900 dark:text-white flex items-center justify-center p-6 selection:bg-primary/30 font-sans">
+        <Toaster position="top-center" reverseOrder={false} />
+        <div className="absolute top-6 left-6">
+          <ThemeToggle />
+        </div>
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md bg-white dark:bg-[#1A1A24] rounded-3xl p-8 shadow-xl border border-gray-200 dark:border-[#2D2D3D] text-center space-y-6"
+        >
+          <div className="w-20 h-20 bg-amber-500/10 rounded-full mx-auto flex items-center justify-center text-amber-500 animate-bounce">
+            <Clock className="w-10 h-10" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-black text-gray-900 dark:text-white">بانتظار موافقة الإدارة وتفعيل حسابك ⏳</h2>
+            <p className="text-sm font-bold text-gray-500 dark:text-gray-400 leading-relaxed">
+              {getPendingMessage()}
+            </p>
+          </div>
+
+          <div className="bg-gray-50 dark:bg-[#0D0D12]/30 p-4 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] space-y-2">
+            <div className="flex items-center justify-center gap-2 text-xs font-black text-[#00B4D8] dark:text-[#D4AF37]">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>جاري الانتظار والمزامنة في الوقت الفعلي...</span>
+            </div>
+            <p className="text-[10px] font-bold text-gray-400 leading-normal">
+              بمجرد تفعيل حسابك من قبل الإدارة، سيتم فتح لوحة التحكم لك تلقائياً وبشكل فوري دون الحاجة لتحديث الصفحة.
+            </p>
+          </div>
+
+          <button 
+            onClick={handleLogout} 
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50/60 dark:bg-red-950/20 hover:bg-red-100/80 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-2xl border border-red-200/50 dark:border-red-900/30 transition-all font-bold text-sm shadow-sm hover:scale-[1.02] active:scale-[0.98] duration-200 cursor-pointer"
+          >
+            <LogOut className="w-4 h-4 shrink-0" /> 
+            <span>تسجيل خروج / عودة</span>
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen bg-gray-50 dark:bg-[#0D0D12] text-gray-900 dark:text-white flex flex-col md:flex-row font-sans selection:bg-primary/30 overflow-hidden">
       
@@ -1353,6 +1460,13 @@ export default function Dashboard() {
                  <Star className="w-4 h-4 fill-[#00B4D8] dark:fill-[#D4AF37]" /> {loadingStars ? '...' : starsCount.toLocaleString('ar-EG')}
               </div>
               <ThemeToggle />
+              <button 
+                onClick={handleLogout}
+                className="md:hidden w-10 h-10 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center border border-red-150 dark:border-red-900/30 transition-all font-bold text-sm shadow-sm hover:scale-[1.02] active:scale-[0.98] duration-200 cursor-pointer"
+                title="تسجيل خروج"
+              >
+                <LogOut className="w-4 h-4 shrink-0" />
+              </button>
               <div className="relative" ref={notificationsRef}>
                 <button 
                   onClick={() => setShowNotifications(!showNotifications)}
