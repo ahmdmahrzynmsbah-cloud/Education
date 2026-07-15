@@ -72,45 +72,61 @@ export async function uploadFileToFirebase(
     }
   }
 
-  // 2. Perform Resumable/Progress Upload to Local Server
+    // 2. Perform Resumable/Progress Upload to Firebase Storage
   return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const formData = new FormData();
-    formData.append('file', file);
+    if (!auth.currentUser) {
+      const errorMsg = 'يجب تسجيل الدخول لرفع الملفات.';
+      toast.error(errorMsg);
+      reject(new Error(errorMsg));
+      return;
+    }
 
-    xhr.open('POST', '/api/upload', true);
+    // Sanitize file name to avoid invalid characters
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    const extension = sanitizedName.split('.').pop() || '';
+    const baseName = sanitizedName.substring(0, sanitizedName.lastIndexOf('.')) || sanitizedName;
+    const uniqueFileName = `${baseName}_${Date.now()}.${extension}`;
+    const filePath = `uploads/${auth.currentUser.uid}/${uniqueFileName}`;
+    
+    const storageRef = ref(storage, filePath);
 
-    // Track upload progress
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percentComplete = (event.loaded / event.total) * 100;
-        onProgress(Math.min(percentComplete, 99.9)); // Cap at 99.9% until finished
-      }
+    // Metadata to help with content type
+    const metadata = {
+      contentType: file.type || 'application/octet-stream',
     };
 
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
+    const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+
+    uploadTask.on(
+      'state_changed',
+      (snapshot) => {
+        // Calculate progress percentage
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        
+        // Prevent showing 100% until the final URL is available
+        const displayProgress = Math.min(progress, 99.9);
+        onProgress(displayProgress);
+      },
+      (error) => {
+        console.error('Firebase Storage Upload Error:', error);
+        const translatedError = translateStorageError(error.code);
+        toast.error(translatedError);
+        reject(new Error(translatedError));
+      },
+      async () => {
         try {
-          const response = JSON.parse(xhr.responseText);
-          if (response && response.url) {
-            onProgress(100);
-            resolve(response.url);
-          } else {
-            reject(new Error('رد غير صالح من الخادم.'));
-          }
-        } catch (e) {
-          reject(new Error('فشل قراءة رد الخادم.'));
+          // Upload completed successfully, get the download URL
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          onProgress(100);
+          resolve(downloadURL);
+        } catch (error) {
+          console.error('Error getting download URL:', error);
+          const translatedError = translateStorageError((error as any).code || 'unknown');
+          toast.error('تم الرفع ولكن فشل الحصول على الرابط: ' + translatedError);
+          reject(error);
         }
-      } else {
-        reject(new Error(`فشل الرفع برمز حالة: ${xhr.status}`));
       }
-    };
-
-    xhr.onerror = () => {
-      reject(new Error('حدث خطأ في الاتصال أثناء رفع الملف.'));
-    };
-
-    xhr.send(formData);
+    );
   });
 }
 

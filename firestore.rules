@@ -121,5 +121,10 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isSignedIn();
     }
+
+    // 16. Course Payments collection
+    match /course_payments/{paymentId} {
+      allow read, write: if isSignedIn();
+    }
   }
 }
