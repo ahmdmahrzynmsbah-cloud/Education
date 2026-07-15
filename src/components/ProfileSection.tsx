@@ -255,7 +255,7 @@ export default function ProfileSection({ userData, onUpdateUserData }: ProfileSe
       } else if (userData.role === 'teacher') {
         updatedFields = {
           ...updatedFields,
-          subject,
+          subject: subject.trim(),
           nationalId,
           dateOfBirth,
           teachingGrades

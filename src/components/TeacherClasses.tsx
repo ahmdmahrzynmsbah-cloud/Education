@@ -102,8 +102,8 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
       }
 
       const newCourseData = {
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim(),
         grade,
         price: Number(price),
         teacherId: userData.id,

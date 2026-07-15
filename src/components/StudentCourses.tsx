@@ -6,7 +6,7 @@ import {
   ArrowRight, Award, Sparkles, X, CheckCircle, Phone, 
   Mail, Play, Compass 
 } from 'lucide-react';
-import { collection, query, getDocs, where } from 'firebase/firestore';
+import { collection, query, getDocs, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { User, Course } from '../types';
 import LuxuriousLoader from './LuxuriousLoader';
@@ -37,75 +37,82 @@ export default function StudentCourses({ userData }: StudentCoursesProps) {
     setFilterTeacherId('');
   }, [searchParams]);
 
-  const fetchAllData = async () => {
-    try {
-      setLoading(true);
+  useEffect(() => {
+    setLoading(true);
 
-      // 1. Fetch all courses
-      const coursesSnap = await getDocs(collection(db, 'courses'));
+    // 1. Subscribe to courses in real-time
+    const unsubscribeCourses = onSnapshot(collection(db, 'courses'), (snapshot) => {
       const fetchedCourses: Course[] = [];
-      coursesSnap.forEach((doc) => {
+      snapshot.forEach((doc) => {
         fetchedCourses.push({ id: doc.id, ...doc.data() } as Course);
       });
       setCourses(fetchedCourses);
+    }, (error) => {
+      console.error('Error listening to courses:', error);
+    });
 
-      // 2. Fetch all teachers
-      const teachersQuery = query(collection(db, 'users'), where('role', '==', 'teacher'));
-      const teachersSnap = await getDocs(teachersQuery);
-      const fetchedTeachers: User[] = [];
-      teachersSnap.forEach((doc) => {
-        fetchedTeachers.push({ id: doc.id, ...doc.data() } as User);
-      });
-      setTeachers(fetchedTeachers);
-
-      // 3. Fetch reviews & calculate average ratings
+    const fetchOtherData = async () => {
       try {
-        const reviewsSnap = await getDocs(collection(db, 'reviews'));
-        const ratings: Record<string, { total: number; count: number }> = {};
-        reviewsSnap.forEach((doc) => {
-          const data = doc.data();
-          const cid = data.courseId;
-          if (cid) {
-            if (!ratings[cid]) {
-              ratings[cid] = { total: 0, count: 0 };
+        // 2. Fetch all teachers
+        const teachersQuery = query(collection(db, 'users'), where('role', '==', 'teacher'));
+        const teachersSnap = await getDocs(teachersQuery);
+        const fetchedTeachers: User[] = [];
+        teachersSnap.forEach((doc) => {
+          fetchedTeachers.push({ id: doc.id, ...doc.data() } as User);
+        });
+        setTeachers(fetchedTeachers);
+
+        // 3. Fetch reviews & calculate average ratings
+        try {
+          const reviewsSnap = await getDocs(collection(db, 'reviews'));
+          const ratings: Record<string, { total: number; count: number }> = {};
+          reviewsSnap.forEach((doc) => {
+            const data = doc.data();
+            const cid = data.courseId;
+            if (cid) {
+              if (!ratings[cid]) {
+                ratings[cid] = { total: 0, count: 0 };
+              }
+              ratings[cid].total += data.rating || 0;
+              ratings[cid].count += 1;
             }
-            ratings[cid].total += data.rating || 0;
-            ratings[cid].count += 1;
-          }
-        });
+          });
 
-        const formattedRatings: Record<string, { average: number; count: number }> = {};
-        Object.keys(ratings).forEach((cid) => {
-          formattedRatings[cid] = {
-            average: parseFloat((ratings[cid].total / ratings[cid].count).toFixed(1)),
-            count: ratings[cid].count
-          };
-        });
-        setCourseRatings(formattedRatings);
-      } catch (err) {
-        console.error('Error fetching reviews/ratings:', err);
+          const formattedRatings: Record<string, { average: number; count: number }> = {};
+          Object.keys(ratings).forEach((cid) => {
+            formattedRatings[cid] = {
+              average: parseFloat((ratings[cid].total / ratings[cid].count).toFixed(1)),
+              count: ratings[cid].count
+            };
+          });
+          setCourseRatings(formattedRatings);
+        } catch (err) {
+          console.error('Error fetching reviews/ratings:', err);
+        }
+
+        // 4. Fetch progress records
+        if (userData?.id) {
+          const qProg = query(collection(db, 'course_progress'), where('userId', '==', userData.id));
+          const progSnap = await getDocs(qProg);
+          const map: Record<string, any> = {};
+          progSnap.forEach((doc) => {
+            const data = doc.data();
+            map[data.courseId] = data;
+          });
+          setProgressMap(map);
+        }
+      } catch (error) {
+        console.error('Error fetching student dashboard data:', error);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      // 4. Fetch progress records
-      if (userData?.id) {
-        const qProg = query(collection(db, 'course_progress'), where('userId', '==', userData.id));
-        const progSnap = await getDocs(qProg);
-        const map: Record<string, any> = {};
-        progSnap.forEach((doc) => {
-          const data = doc.data();
-          map[data.courseId] = data;
-        });
-        setProgressMap(map);
-      }
-    } catch (error) {
-      console.error('Error fetching student dashboard data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    fetchOtherData();
 
-  useEffect(() => {
-    fetchAllData();
+    return () => {
+      unsubscribeCourses();
+    };
   }, [userData]);
 
   // Compute stats per teacher
