@@ -6,6 +6,7 @@ import { Plus, Edit2, Trash2, Users, BookOpen, Clock, ImageIcon, X, Image as Ima
 import { collection, query, where, getDocs, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, arrayRemove, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { User, Course } from '../types';
+import LuxuriousLoader from './LuxuriousLoader';
 import { uploadChunkedFile } from '../lib/upload';
 import { toast, Toaster } from 'react-hot-toast';
 
@@ -445,8 +446,7 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
         <div className="bg-white dark:bg-[#1A1A24] rounded-3xl border border-gray-100 dark:border-[#2D2D3D] p-6 shadow-sm min-h-[500px]">
           {loadingStudents ? (
             <div className="flex flex-col items-center justify-center h-full py-32 gap-4">
-              <div className="w-12 h-12 border-4 border-[#00B4D8]/30 dark:border-[#D4AF37]/30 border-t-[#00B4D8] dark:border-t-[#D4AF37] rounded-full animate-spin" />
-              <span className="text-sm font-bold text-gray-500">جاري تحميل بيانات الطلاب...</span>
+              <LuxuriousLoader size="md" text="جاري تحميل بيانات الطلاب..." />
             </div>
           ) : courseStudents.length === 0 ? (
             <div className="text-center py-32">
@@ -692,7 +692,7 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
-          <div className="w-12 h-12 border-4 border-gray-200 dark:border-[#2D2D3D] border-t-[#00B4D8] dark:border-t-[#D4AF37] rounded-full animate-spin"></div>
+          <LuxuriousLoader size="md" text="جاري تحميل الكورسات..." />
         </div>
       ) : filteredCourses.length === 0 ? (
         <motion.div

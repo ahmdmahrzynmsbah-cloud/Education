@@ -1309,7 +1309,7 @@ export default function Dashboard() {
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold text-sm ${
                 activeTab === item.id 
                   ? 'bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 text-[#00B4D8] dark:text-[#D4AF37]' 
-                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:bg-[#0D0D12] hover:text-gray-900 dark:text-white'
+                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-[#1A1A24] dark:bg-[#0D0D12] hover:text-gray-900 dark:hover:text-white'
               }`}
             >
               <item.icon className="w-5 h-5" />
@@ -1354,7 +1354,7 @@ export default function Dashboard() {
               <div className="relative" ref={notificationsRef}>
                 <button 
                   onClick={() => setShowNotifications(!showNotifications)}
-                  className="w-10 h-10 bg-gray-50 dark:bg-[#0D0D12] rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:bg-[#222230] transition-colors relative"
+                  className="w-10 h-10 bg-gray-50 dark:bg-[#0D0D12] rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#222230] transition-colors relative"
                 >
                    <Bell className="w-5 h-5" />
                    {notifications.filter(n => !n.read).length > 0 && (
@@ -1735,7 +1735,7 @@ export default function Dashboard() {
                       className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:bg-[#1A1A24] rounded-xl px-6 py-4 text-center text-2xl tracking-[0.2em] font-mono text-gray-900 dark:text-white outline-none transition-colors mb-6 uppercase"
                       dir="ltr"
                     />
-                    <button type="submit" className="w-full bg-[#00B4D8] dark:bg-[#D4AF37] text-white font-bold py-4 rounded-xl shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:bg-[#B8860B] hover:-translate-y-0.5 transition-all text-lg">
+                    <button type="submit" className="w-full bg-[#00B4D8] dark:bg-[#D4AF37] text-white font-bold py-4 rounded-xl shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:hover:bg-[#B8860B] dark:hover:bg-[#B8860B] hover:-translate-y-0.5 transition-all text-lg">
                       تفعيل الكود
                     </button>
                   </form>
@@ -1765,7 +1765,7 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {activeTab === 'subjects' && userData?.role === 'student' && (
+            {activeTab === 'subjects' && (
               <motion.div
                 key="subjects"
                 initial={{ opacity: 0, y: 10 }}
@@ -1926,7 +1926,7 @@ export default function Dashboard() {
                       <button 
                         type="submit" 
                         disabled={activationStatus === 'idle' && code.length > 0}
-                        className="w-full bg-[#00B4D8] dark:bg-[#D4AF37] text-white font-black py-4 rounded-2xl shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:hover:bg-[#B8860B] transition-all text-base flex items-center justify-center gap-2 active:scale-[0.99]"
+                        className="w-full bg-[#00B4D8] dark:bg-[#D4AF37] text-white font-black py-4 rounded-2xl shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:hover:bg-[#B8860B] dark:hover:bg-[#B8860B] transition-all text-base flex items-center justify-center gap-2 active:scale-[0.99]"
                       >
                         <CheckCircle className="w-5 h-5" />
                         تفعيل الكارت وشحن المحفظة
@@ -2277,7 +2277,7 @@ export default function Dashboard() {
                                                 setSelectedQuizReview(quiz);
                                                 setSelectedSubmissionReview(sub);
                                               }}
-                                              className="px-5 py-3 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 rounded-2xl font-bold text-xs transition-colors flex items-center gap-2"
+                                              className="px-5 py-3 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 dark:hover:bg-[#D4AF37]/20 rounded-2xl font-bold text-xs transition-colors flex items-center gap-2"
                                             >
                                               <Award className="w-4 h-4" />
                                               تصحيح الأخطاء والتقرير
@@ -2289,7 +2289,7 @@ export default function Dashboard() {
                                               navigate(`/course/${quiz.courseId}`);
                                               toast.success('تم توجيهك لصفحة الكورس، الرجاء اختيار الدرس وبدء الاختبار من تبويب الاختبار التفاعلي.');
                                             }}
-                                            className="px-6 py-3 bg-[#00B4D8] dark:bg-[#D4AF37] text-white hover:bg-[#0077B6] rounded-2xl font-bold text-xs shadow-md transition-all flex items-center gap-2 hover:-translate-y-0.5"
+                                            className="px-6 py-3 bg-[#00B4D8] dark:bg-[#D4AF37] text-white hover:bg-[#0077B6] dark:hover:bg-[#B8860B] rounded-2xl font-bold text-xs shadow-md transition-all flex items-center gap-2 hover:-translate-y-0.5"
                                           >
                                             <Play className="w-4 h-4" />
                                             ابدأ الاختبار الآن
@@ -2396,7 +2396,7 @@ export default function Dashboard() {
                                                 setSelectedQuizReview(quiz);
                                                 setSelectedSubmissionReview(sub);
                                               }}
-                                              className="px-5 py-3 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 rounded-2xl font-bold text-xs transition-colors flex items-center gap-2"
+                                              className="px-5 py-3 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 dark:hover:bg-[#D4AF37]/20 rounded-2xl font-bold text-xs transition-colors flex items-center gap-2"
                                             >
                                               <Award className="w-4 h-4" />
                                               تقرير الإجابات والأخطاء
@@ -2407,7 +2407,7 @@ export default function Dashboard() {
                                             onClick={() => {
                                               navigate(`/exam/${quiz.id}`);
                                             }}
-                                            className="px-6 py-3 bg-[#00B4D8] dark:bg-[#D4AF37] text-white hover:bg-[#0077B6] rounded-2xl font-bold text-xs shadow-md transition-all flex items-center gap-2 hover:-translate-y-0.5 animate-pulse"
+                                            className="px-6 py-3 bg-[#00B4D8] dark:bg-[#D4AF37] text-white hover:bg-[#0077B6] dark:hover:bg-[#B8860B] rounded-2xl font-bold text-xs shadow-md transition-all flex items-center gap-2 hover:-translate-y-0.5 animate-pulse"
                                           >
                                             <Play className="w-4 h-4" />
                                             دخول وبدء الامتحان الشامل الآن
@@ -2477,7 +2477,7 @@ export default function Dashboard() {
                               </div>
                               <button
                                 onClick={() => setActiveTab('classes')}
-                                className="px-6 py-3 bg-[#00B4D8] dark:bg-[#D4AF37] hover:bg-[#0077B6] text-white rounded-2xl font-black text-xs shadow-md transition-all flex items-center gap-2 shrink-0 hover:-translate-y-0.5"
+                                className="px-6 py-3 bg-[#00B4D8] dark:bg-[#D4AF37] hover:bg-[#0077B6] dark:hover:bg-[#B8860B] text-white rounded-2xl font-black text-xs shadow-md transition-all flex items-center gap-2 shrink-0 hover:-translate-y-0.5"
                               >
                                 <Users className="w-4 h-4" />
                                 الذهاب إلى "فصولي" للبدء
@@ -2501,7 +2501,7 @@ export default function Dashboard() {
                                       className={`w-full p-4 rounded-2xl text-right border transition-all flex flex-col gap-2 ${
                                         isSelected
                                           ? 'bg-gradient-to-l from-[#00B4D8]/10 to-transparent border-[#00B4D8] dark:from-[#D4AF37]/10 dark:border-[#D4AF37] shadow-sm'
-                                          : 'bg-white dark:bg-[#1A1A24] border-gray-200 dark:border-[#2D2D3D] hover:bg-gray-50'
+                                          : 'bg-white dark:bg-[#1A1A24] border-gray-200 dark:border-[#2D2D3D] hover:bg-gray-50 dark:hover:bg-[#222230]'
                                       }`}
                                     >
                                       <span className="text-[10px] bg-gray-100 dark:bg-[#222230] text-gray-500 px-2 py-0.5 rounded-full font-bold self-start">
@@ -2539,7 +2539,7 @@ export default function Dashboard() {
                                             navigate(`/course/${teacherSelectedQuiz.courseId}`);
                                             toast.success('تم توجيهك لصفحة الكورس للتعديل على الاختبار.');
                                           }}
-                                          className="px-4 py-2.5 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] rounded-xl text-xs font-bold transition-all hover:bg-[#00B4D8]/20 flex items-center gap-1.5"
+                                          className="px-4 py-2.5 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] rounded-xl text-xs font-bold transition-all hover:bg-[#00B4D8]/20 dark:hover:bg-[#D4AF37]/20 flex items-center gap-1.5"
                                         >
                                           <Edit2 className="w-3.5 h-3.5" />
                                           تعديل الأسئلة
@@ -2628,7 +2628,7 @@ export default function Dashboard() {
                                         className={`p-4 rounded-2xl border transition-all flex flex-col gap-2 relative group cursor-pointer ${
                                           isSelected
                                             ? 'bg-gradient-to-l from-[#00B4D8]/10 to-transparent border-[#00B4D8] dark:from-[#D4AF37]/10 dark:border-[#D4AF37] shadow-sm'
-                                            : 'bg-white dark:bg-[#1A1A24] border-gray-200 dark:border-[#2D2D3D] hover:bg-gray-50'
+                                            : 'bg-white dark:bg-[#1A1A24] border-gray-200 dark:border-[#2D2D3D] hover:bg-gray-50 dark:hover:bg-[#222230]'
                                         }`}
                                         onClick={() => setTeacherSelectedQuiz(quiz)}
                                       >
@@ -2697,7 +2697,7 @@ export default function Dashboard() {
                                               setEditingExamId(teacherSelectedQuiz.id);
                                               setIsCreatingExam(true);
                                             }}
-                                            className="px-4 py-2.5 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] rounded-xl text-xs font-bold transition-all hover:bg-[#00B4D8]/20 flex items-center gap-1.5"
+                                            className="px-4 py-2.5 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] rounded-xl text-xs font-bold transition-all hover:bg-[#00B4D8]/20 dark:hover:bg-[#D4AF37]/20 flex items-center gap-1.5"
                                           >
                                             <Edit2 className="w-3.5 h-3.5" />
                                             تعديل الامتحان
@@ -2948,7 +2948,7 @@ export default function Dashboard() {
                               setSelectedQuizReview(null);
                               setSelectedSubmissionReview(null);
                             }}
-                            className="px-6 py-2.5 bg-gray-100 dark:bg-[#2D2D3D] hover:bg-gray-200 text-gray-700 dark:text-white rounded-xl text-xs font-black transition-colors"
+                            className="px-6 py-2.5 bg-gray-100 dark:bg-[#2D2D3D] hover:bg-gray-200 dark:hover:bg-[#3D3D52] text-gray-700 dark:text-white rounded-xl text-xs font-black transition-colors"
                           >
                             إغلاق التقرير
                           </button>

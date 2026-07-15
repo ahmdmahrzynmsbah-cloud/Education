@@ -654,11 +654,6 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
                             <span className={`text-xs sm:text-sm font-black ${isToday ? "text-[#00B4D8] dark:text-[#D4AF37]" : ""}`}>
                               {cell.day}
                             </span>
-                            {isToday && (
-                              <span className="hidden sm:inline-block text-[8px] bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-1.5 py-0.5 rounded-full font-black">
-                                اليوم
-                              </span>
-                            )}
                           </div>
 
                           {/* Miniature colored dots or labels for events */}
