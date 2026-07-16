@@ -83,7 +83,7 @@ export default function StudentBadges({ userData }: StudentBadgesProps) {
     };
 
     fetchBadges();
-  }, [userData]);
+  }, [userData?.id]);
 
   const handleBadgeClick = (badge: Badge) => {
     // Fire confetti!

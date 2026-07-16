@@ -89,6 +89,22 @@
         "createdAt": { "type": "string" }
       },
       "required": ["userId", "userName", "courseId", "courseTitle", "focusMinutes", "createdAt"]
+    },
+    "RechargeCode": {
+      "title": "Recharge Code",
+      "description": "Prepaid recharge codes used to charge student wallets.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "amount": { "type": "number" },
+        "used": { "type": "boolean" },
+        "usedBy": { "type": "string" },
+        "usedByName": { "type": "string" },
+        "usedAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["code", "amount", "used", "createdBy", "createdAt"]
     }
   },
   "firestore": {
@@ -111,6 +127,10 @@
     "focus_sessions/{sessionId}": {
       "schema": { "$ref": "FocusSession" },
       "description": "Focus and study time statistics."
+    },
+    "recharge_codes/{codeId}": {
+      "schema": { "$ref": "RechargeCode" },
+      "description": "Prepaid recharge codes and cards."
     }
   }
 }

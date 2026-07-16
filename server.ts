@@ -77,6 +77,140 @@ async function startServer() {
     res.json({ url: fileUrl });
   });
 
+  // Bunny Stream dynamic library resolution
+  async function resolveLibraryId(apiKey: string): Promise<string> {
+    try {
+      const response = await fetch('https://video.bunnycdn.com/library', {
+        method: 'GET',
+        headers: {
+          'AccessKey': apiKey,
+          'accept': 'application/json'
+        }
+      });
+      if (response.ok) {
+        const list = await response.json() as any;
+        if (Array.isArray(list) && list.length > 0) {
+          return String(list[0].id);
+        }
+        if (list && Array.isArray(list.items) && list.items.length > 0) {
+          return String(list.items[0].id);
+        }
+      }
+    } catch (err) {
+      console.error("Error resolving library ID dynamically:", err);
+    }
+    return '705459'; // Fallback
+  }
+
+  // Bunny Stream: Create Video
+  app.post('/api/bunny/create-video', express.json(), async (req, res) => {
+    try {
+      const { title } = req.body;
+      const apiKey = process.env.BUNNY_API_KEY || '859b2119-fcac-40bf-9d78e2104ae3-b4e1-4127';
+      const libraryId = await resolveLibraryId(apiKey);
+
+      const response = await fetch(`https://video.bunnycdn.com/library/${libraryId}/videos`, {
+        method: 'POST',
+        headers: {
+          'AccessKey': apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title }),
+      });
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      console.error("Bunny API Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Bunny Stream: Upload Video
+  app.post('/api/bunny/upload', upload.single('file'), async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded.' });
+    }
+
+    const filePath = req.file.path;
+    const originalName = req.file.originalname;
+
+    try {
+      const apiKey = process.env.BUNNY_API_KEY || '859b2119-fcac-40bf-9d78e2104ae3-b4e1-4127';
+      const libraryId = await resolveLibraryId(apiKey);
+
+      // 1. Create Video on Bunny Stream
+      const createResponse = await fetch(`https://video.bunnycdn.com/library/${libraryId}/videos`, {
+        method: 'POST',
+        headers: {
+          'AccessKey': apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title: originalName }),
+      });
+
+      if (!createResponse.ok) {
+        const errText = await createResponse.text();
+        throw new Error(`Failed to create video on Bunny: ${errText}`);
+      }
+
+      const createData = await createResponse.json() as any;
+      const videoId = createData.guid;
+
+      if (!videoId) {
+        throw new Error('No video GUID returned from Bunny.');
+      }
+
+      // 2. Upload file content to Bunny Stream
+      const fileStream = fs.createReadStream(filePath);
+      const uploadResponse = await fetch(`https://video.bunnycdn.com/library/${libraryId}/videos/${videoId}`, {
+        method: 'PUT',
+        headers: {
+          'AccessKey': apiKey,
+          'Content-Type': 'application/octet-stream',
+        },
+        body: fileStream as any,
+      });
+
+      if (!uploadResponse.ok) {
+        const errText = await uploadResponse.text();
+        throw new Error(`Failed to upload video content to Bunny: ${errText}`);
+      }
+
+      // Delete local temp file
+      fs.unlink(filePath, (err) => {
+        if (err) console.error("Error deleting temp file:", err);
+      });
+
+      res.json({
+        success: true,
+        videoId: videoId,
+        url: `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`
+      });
+
+    } catch (error: any) {
+      console.error("Bunny Upload error:", error);
+      // Clean up temp file
+      if (fs.existsSync(filePath)) {
+        fs.unlink(filePath, (err) => {});
+      }
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Bunny Stream: Signed URL / Play URL
+  app.get('/api/bunny/play-url/:videoId', async (req, res) => {
+    try {
+      const { videoId } = req.params;
+      const apiKey = process.env.BUNNY_API_KEY || '859b2119-fcac-40bf-9d78e2104ae3-b4e1-4127';
+      const libraryId = await resolveLibraryId(apiKey);
+      const url = `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`;
+      res.json({ url });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Gemini AI Chat Route
   app.post('/api/chat', async (req, res) => {
     try {

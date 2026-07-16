@@ -45,6 +45,7 @@ export default function ComprehensiveExamBuilder({
     { id: "q_1", text: "", options: ["", "", "", ""], correctOptionIndex: 0, points: 1, explanation: "" },
   ]);
   const [saving, setSaving] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
 
   // Load existing exam data if editing
   useEffect(() => {
@@ -55,6 +56,7 @@ export default function ComprehensiveExamBuilder({
       setCourseId(existingExamData.courseId === "all" ? "" : existingExamData.courseId || "");
       setIsLeagueExam(existingExamData.isLeagueExam || false);
       setScheduledTime(existingExamData.scheduledTime || "");
+      setIsHidden(existingExamData.isHidden || false);
       setQuestions(existingExamData.questions || [
         { id: "q_1", text: "", options: ["", "", "", ""], correctOptionIndex: 0, points: 1, explanation: "" }
       ]);
@@ -66,6 +68,7 @@ export default function ComprehensiveExamBuilder({
       setCourseId("");
       setIsLeagueExam(false);
       setScheduledTime("");
+      setIsHidden(false);
       setQuestions([
         { id: "q_1", text: "", options: ["", "", "", ""], correctOptionIndex: 0, points: 1, explanation: "" },
       ]);
@@ -163,6 +166,7 @@ export default function ComprehensiveExamBuilder({
         scheduledTime: scheduledTime || "",
         createdBy: userData.id,
         createdAt: existingExamData?.createdAt || new Date().toISOString(),
+        isHidden: isHidden,
       };
 
       await setDoc(doc(db, "quizzes", examId), examData);
@@ -279,7 +283,7 @@ export default function ComprehensiveExamBuilder({
                       إدراج كاختبار دوري في دوري Teachland الأسبوعي 🏆
                     </label>
                     <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold mt-1 leading-relaxed">
-                      عند تفعيل هذا الخيار، سيظهر هذا الاختبار داخل صفحة "الدوري" للطلاب. وسيحصل الطالب على نقاط تضاف لتصنيفه في الدوري الأسبوعي بناءً على درجته (3 نقاط لكل 1% من النتيجة الإجمالية للاختبار، بحد أقصى 300 نقطة لكل اختبار).
+                      عند تفعيل هذا الخيار، سيظهر هذا الاختبار داخل صفحة "الدوري" للطلاب. وسيحصل الطالب على نجوم تضاف لتصنيفه في الدوري الأسبوعي بناءً على درجته (3 نجوم لكل 1% من النتيجة الإجمالية للاختبار، بحد أقصى 300 نجمة لكل اختبار).
                     </p>
                   </div>
                 </div>
@@ -303,6 +307,27 @@ export default function ComprehensiveExamBuilder({
                     />
                   </div>
                 )}
+              </div>
+
+              {/* isHidden Draft Toggle option */}
+              <div className="md:col-span-2 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-2xl flex flex-col gap-3 mt-2 select-none">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="isHidden"
+                    checked={isHidden}
+                    onChange={(e) => setIsHidden(e.target.checked)}
+                    className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37] border-gray-300 dark:border-[#2D2D3D] rounded focus:ring-0 mt-0.5 cursor-pointer accent-[#00B4D8] dark:accent-[#D4AF37]"
+                  />
+                  <div className="text-right flex-1">
+                    <label htmlFor="isHidden" className="text-xs font-black text-gray-800 dark:text-white cursor-pointer">
+                      إخفاء هذا الامتحان مؤقتاً وحفظه كمسودة 🙈
+                    </label>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold mt-1 leading-relaxed">
+                      عند تفعيل هذا الخيار، لن يظهر هذا الامتحان للطلاب حتى تقوم بنشره وتوجيهه إليهم لاحقاً من لوحة التحكم التفاعلية للاختبارات.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -391,7 +416,7 @@ export default function ComprehensiveExamBuilder({
                     {/* Additional fields: points and explanation */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-gray-50 dark:border-[#2D2D3D]/30 pt-3">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-gray-400">الدرجة (النقاط)</label>
+                        <label className="text-[10px] font-bold text-gray-400">الدرجة (النجوم)</label>
                         <input
                           type="number"
                           min={1}

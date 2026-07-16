@@ -191,7 +191,7 @@ export default function ProfileSection({ userData, onUpdateUserData }: ProfileSe
     };
 
     fetchProfileStatsAndCourses();
-  }, [userData]);
+  }, [userData?.id, userData?.role]);
 
   // Basic Details State
   const [name, setName] = useState(userData?.name || '');
@@ -553,10 +553,10 @@ export default function ProfileSection({ userData, onUpdateUserData }: ProfileSe
                       {userData?.role === 'student' ? (
                         <>
                           <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-5 border border-gray-200 dark:border-[#2D2D3D] shadow-sm text-right space-y-1 relative overflow-hidden group hover:scale-[1.02] transition-all">
-                            <div className="w-10 h-10 rounded-xl bg-[#00B4D8]/10 text-[#00B4D8] flex items-center justify-center text-lg font-bold">⭐</div>
-                            <span className="text-[10px] text-gray-400 font-bold block pt-1">النقاط والنجوم</span>
-                            <h3 className="text-xl font-black text-gray-900 dark:text-white font-sans">{userData?.stars || 0}</h3>
-                            <p className="text-[9px] text-gray-400 font-bold">تفاعلك الدراسي مستمر</p>
+                            <div className="w-10 h-10 rounded-xl bg-[#00B4D8]/10 text-[#00B4D8] flex items-center justify-center text-lg font-bold">💰</div>
+                            <span className="text-[10px] text-gray-400 font-bold block pt-1">رصيد المحفظة</span>
+                            <h3 className="text-xl font-black text-gray-900 dark:text-white font-sans">{userData?.balance || 0} <span className="text-xs">ج.م</span></h3>
+                            <p className="text-[9px] text-gray-400 font-bold">يمكنك الشحن لاحقاً</p>
                           </div>
 
                           <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-5 border border-gray-200 dark:border-[#2D2D3D] shadow-sm text-right space-y-1 relative overflow-hidden group hover:scale-[1.02] transition-all">

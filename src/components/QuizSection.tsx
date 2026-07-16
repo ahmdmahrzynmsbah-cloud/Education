@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Award, BookOpen, Check, CheckCircle2, Clock, Edit2, HelpCircle, List, 
   Loader2, Plus, RefreshCw, Save, Settings, Trash2, Users, X, 
-  AlertCircle, ArrowRight, ArrowLeft, History, Trophy, Eye, ChevronRight, ChevronLeft, AlertTriangle
+  AlertCircle, ArrowRight, ArrowLeft, History, Trophy, Eye, ChevronRight, ChevronLeft, AlertTriangle, Shield
 } from 'lucide-react';
 import { doc, getDoc, getDocs, setDoc, addDoc, deleteDoc, query, where, collection, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -36,6 +36,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
   const [activeTeacherTab, setActiveTeacherTab] = useState<'edit' | 'grades'>('edit');
   const [savingQuiz, setSavingQuiz] = useState(false);
   const [selectedStudentAnswers, setSelectedStudentAnswers] = useState<QuizSubmission | null>(null);
+  const [quizIsHidden, setQuizIsHidden] = useState(false);
 
   // Student taking state
   const [quizStarted, setQuizStarted] = useState(false);
@@ -47,6 +48,8 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
   const [showResultModal, setShowResultModal] = useState(false);
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
   const [unansweredQuestionsCount, setUnansweredQuestionsCount] = useState(0);
+  const [infractions, setInfractions] = useState(0);
+  const [showInfractionWarning, setShowInfractionWarning] = useState(false);
   
   // Timer interval ref
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -75,6 +78,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
           setQuizDesc(quizData.description || '');
           setQuizTimeLimit(quizData.timeLimit || 0);
           setQuestions(quizData.questions || []);
+          setQuizIsHidden(quizData.isHidden || false);
           
           // 2. Fetch current student's submission for this quiz
           if (!isTeacher) {
@@ -99,6 +103,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
         } else {
           setQuiz(null);
           setSubmission(null);
+          setQuizIsHidden(false);
           // Set defaults for creation
           setQuizTitle(`اختبار تفاعلي: ${lessonTitle}`);
           setQuizDesc('أجب عن الأسئلة التالية لقياس مدى فهمك للدرس.');
@@ -147,6 +152,50 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
     };
   }, [quizStarted, timeLeft]);
 
+  // Tab change & window blur protection for interactive lesson quizzes
+  useEffect(() => {
+    if (!quizStarted) {
+      setInfractions(0);
+      setShowInfractionWarning(false);
+      return;
+    }
+
+    const handleFocusLoss = () => {
+      setInfractions((prev) => {
+        const next = prev + 1;
+        if (next >= 3) {
+          toast.error("تم رصد 3 محاولات خروج من الصفحة. تم تسليم الاختبار تلقائياً وإلغاء النتيجة!");
+          submitQuizData(selectedAnswers, 3, true);
+          setQuizStarted(false);
+        } else {
+          setShowInfractionWarning(true);
+          toast(`⚠️ تنبيه: لا تغادر صفحة الاختبار! تم تسجيل مخالفة ${next}/3`, {
+            icon: '⚠️',
+          });
+        }
+        return next;
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        handleFocusLoss();
+      }
+    };
+
+    const handleBlur = () => {
+      handleFocusLoss();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleBlur);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [quizStarted, selectedAnswers]);
+
   const handleStartQuiz = () => {
     if (!quiz || quiz.questions.length === 0) {
       toast.error('لا توجد أسئلة مضافة في هذا الاختبار بعد');
@@ -156,6 +205,8 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
     setCurrentQuestionIdx(0);
     setReviewMode(false);
     setShowResultModal(false);
+    setInfractions(0);
+    setShowInfractionWarning(false);
     quizStartTimeRef.current = Date.now();
     
     if (quiz.timeLimit && quiz.timeLimit > 0) {
@@ -221,7 +272,11 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
     }
   };
 
-  const submitQuizData = async (answers: Record<string, number>) => {
+  const submitQuizData = async (
+    answers: Record<string, number>,
+    infractionsCountParam?: number,
+    cheatedViolationParam?: boolean
+  ) => {
     if (!quiz) return;
     
     let correctCount = 0;
@@ -240,6 +295,9 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
     const calculatedPercentage = Math.round((earnedPoints / (totalQuizPoints || 1)) * 100);
     const passed = calculatedPercentage >= 50;
 
+    const finalScore = cheatedViolationParam ? 0 : calculatedPercentage;
+    const finalPassed = cheatedViolationParam ? false : passed;
+
     const subDocId = `${userData.id}_${quiz.id}`;
     const submissionData: QuizSubmission = {
       id: subDocId,
@@ -248,13 +306,15 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
       quizId: quiz.id,
       courseId: courseId,
       lessonId: lessonId,
-      score: calculatedPercentage,
+      score: finalScore,
       totalPoints: totalQuizPoints,
-      correctAnswers: correctCount,
+      correctAnswers: cheatedViolationParam ? 0 : correctCount,
       totalQuestions: quiz.questions.length,
       answers: answers,
       submittedAt: new Date().toISOString(),
-      passed: passed
+      passed: finalPassed,
+      infractionsCount: infractionsCountParam !== undefined ? infractionsCountParam : infractions,
+      cheatedViolation: cheatedViolationParam || false
     };
 
     // Save to Firestore
@@ -265,16 +325,18 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
     setShowResultModal(true);
 
     // Reward student points in their profile if they passed or got a high score
-    if (passed) {
+    if (finalPassed && !cheatedViolationParam) {
       try {
         const bonusPoints = earnedPoints;
         await updateDoc(doc(db, 'users', userData.id), {
           points: increment(bonusPoints)
         });
-        toast.success(`أحسنت صنعاً! تم إضافة ${bonusPoints} نقطة إلى رصيد تميزك! 🏆`);
+        toast.success(`أحسنت صنعاً! تم إضافة ${bonusPoints} نجمة إلى رصيد تميزك! 🏆`);
       } catch (err) {
         console.error('Error rewarding points:', err);
       }
+    } else if (cheatedViolationParam) {
+      toast.error('تم إلغاء نتيجة الاختبار وتصفير الدرجة لمغادرتك الصفحة المتكرر.');
     } else {
       toast.success('تم تسليم الاختبار بنجاح، يمكنك الآن مراجعة الأخطاء والتفسير العلمي لكل سؤال.');
     }
@@ -340,7 +402,8 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
         questions: questions,
         timeLimit: Number(quizTimeLimit) || 0,
         createdBy: userData.id,
-        createdAt: quiz?.createdAt || new Date().toISOString()
+        createdAt: quiz?.createdAt || new Date().toISOString(),
+        isHidden: quizIsHidden
       };
 
       await setDoc(doc(db, 'quizzes', quizId), updatedQuiz);
@@ -537,6 +600,27 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
               </div>
             </div>
 
+            {/* Checkbox for Hide/Draft */}
+            {(isEditing || !quiz) && (
+              <div className="bg-yellow-500/5 dark:bg-yellow-500/10 border border-yellow-500/20 dark:border-yellow-500/30 rounded-2xl p-4 flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="quizIsHidden"
+                  checked={quizIsHidden}
+                  onChange={(e) => setQuizIsHidden(e.target.checked)}
+                  className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37] border-gray-300 dark:border-[#2D2D3D] rounded focus:ring-0 cursor-pointer accent-[#00B4D8] dark:accent-[#D4AF37]"
+                />
+                <div className="text-right flex-1">
+                  <label htmlFor="quizIsHidden" className="text-xs font-black text-gray-800 dark:text-white cursor-pointer">
+                    إخفاء هذا الاختبار مؤقتاً وحفظه كمسودة 🙈
+                  </label>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold mt-0.5">
+                    عند تفعيل هذا الخيار، لن يتمكن الطلاب من رؤية أو بدء هذا الاختبار حتى تقوم بنشره وتوجيهه إليهم لاحقاً من لوحة التحكم الرئيسية للاختبارات.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Questions Builder */}
             <div className="space-y-4 pt-4">
               <div className="flex justify-between items-center">
@@ -638,7 +722,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">نقاط السؤال</label>
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400">نجوم السؤال</label>
                         <input
                           type="number"
                           min="1"
@@ -683,8 +767,27 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
               <div className="space-y-4">
                 <div className="flex justify-between items-center bg-white dark:bg-[#1C1C28] p-4 rounded-xl border border-gray-100 dark:border-[#2D2D3D]">
                   <div>
-                    <span className="text-xs text-gray-400 dark:text-gray-500 font-bold block">إجابات الطالب المTeachland:</span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500 font-bold block">إجابات الطالب المتقدّم:</span>
                     <h4 className="font-black text-base text-gray-900 dark:text-white">{selectedStudentAnswers.userName}</h4>
+                    
+                    <div className="mt-2">
+                      {selectedStudentAnswers.cheatedViolation ? (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] bg-red-100 text-red-700 dark:bg-red-950/50 font-black flex items-center gap-1 w-fit">
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-500 animate-pulse" />
+                          تم إلغاء الاختبار تلقائياً وتسجيل تقرير غش لمغادرة الصفحة 3 مرات 🛑
+                        </span>
+                      ) : selectedStudentAnswers.infractionsCount && selectedStudentAnswers.infractionsCount > 0 ? (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] bg-amber-50 text-amber-600 dark:bg-amber-950/30 font-black flex items-center gap-1 w-fit">
+                          <Shield className="w-3.5 h-3.5 text-amber-500" />
+                          تم رصد {selectedStudentAnswers.infractionsCount} محاولات خروج وتغيير تبويب صفحة الاختبار ⚠️
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-[10px] bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 font-black flex items-center gap-1 w-fit">
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          بيئة آمنة: لم يقم الطالب بأي محاولات للخروج من صفحة الاختبار 🔒
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-left font-sans">
@@ -713,7 +816,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                             سؤال {idx + 1}
                           </span>
                           <span className="text-xs font-bold text-gray-400 font-sans">
-                            {isCorrect ? `${q.points} من ${q.points} نقاط` : '0 من 0 نقاط'}
+                            {isCorrect ? `${q.points} من ${q.points} نجوم` : '0 من 0 نجوم'}
                           </span>
                         </div>
                         <p className="text-xs sm:text-sm font-black text-gray-900 dark:text-white">{q.text}</p>
@@ -762,7 +865,8 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                       <th className="p-4">اسم الطالب</th>
                       <th className="p-4">النتيجة</th>
                       <th className="p-4">إجابات صحيحة</th>
-                      <th className="p-4">الحالة</th>
+                      <th className="p-4">الحالة الأكاديمية</th>
+                      <th className="p-4">حماية التبويب 🔒</th>
                       <th className="p-4">تاريخ التسليم</th>
                       <th className="p-4 text-center">الإجراء</th>
                     </tr>
@@ -770,7 +874,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                   <tbody className="divide-y divide-gray-100 dark:divide-[#2D2D3D] font-bold">
                     {allSubmissions.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center p-8 text-gray-400">
+                        <td colSpan={7} className="text-center p-8 text-gray-400">
                           لا توجد تسليمات مسجلة لهذا الاختبار من الطلاب حتى الآن.
                         </td>
                       </tr>
@@ -786,8 +890,26 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                                 ? 'bg-green-100 dark:bg-green-950/30 text-green-600 dark:text-green-400' 
                                 : 'bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400'
                             }`}>
-                              {sub.passed ? 'ناجح ومTeachland' : 'يحتاج لمراجعة'}
+                              {sub.passed ? 'ناجح وممتاز' : 'يحتاج لمراجعة'}
                             </span>
+                          </td>
+                          <td className="p-4">
+                            {sub.cheatedViolation ? (
+                              <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-950/40 text-[10px] font-black flex items-center gap-1 w-fit">
+                                <AlertTriangle className="w-3.5 h-3.5 text-red-500 animate-pulse" />
+                                محاولة ملغاة (غش) 🛑
+                              </span>
+                            ) : sub.infractionsCount && sub.infractionsCount > 0 ? (
+                              <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-950/30 text-[10px] font-black flex items-center gap-1 w-fit">
+                                <Shield className="w-3.5 h-3.5 text-amber-500" />
+                                {sub.infractionsCount} مخالفات خروج ⚠️
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 text-[10px] font-black flex items-center gap-1 w-fit">
+                                <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                آمن بالكامل ✅
+                              </span>
+                            )}
                           </td>
                           <td className="p-4 font-sans text-gray-400 dark:text-gray-500">
                             {new Date(sub.submittedAt).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
@@ -909,8 +1031,8 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                 </div>
                 <div className="p-4 rounded-xl bg-gray-50/50 dark:bg-[#222230]/50 border border-gray-100 dark:border-[#2D2D3D]/50 space-y-1">
                   <Award className="w-6 h-6 mx-auto text-[#00B4D8] dark:text-[#D4AF37]" />
-                  <h4 className="text-xs font-black text-gray-900 dark:text-white">نقاط إضافية</h4>
-                  <p className="text-[10px] text-gray-500">احصل على نقاط إضافية في رصيد تميزك عند تخطي 50%.</p>
+                  <h4 className="text-xs font-black text-gray-900 dark:text-white">نجوم إضافية</h4>
+                  <p className="text-[10px] text-gray-500">احصل على نجوم إضافية في رصيد تميزك عند تخطي 50%.</p>
                 </div>
                 <div className="p-4 rounded-xl bg-gray-50/50 dark:bg-[#222230]/50 border border-gray-100 dark:border-[#2D2D3D]/50 space-y-1">
                   <BookOpen className="w-6 h-6 mx-auto text-[#00B4D8] dark:text-[#D4AF37]" />
@@ -932,14 +1054,22 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
             className="bg-white dark:bg-[#1A1A24] rounded-2xl p-5 sm:p-6 border border-gray-200 dark:border-[#2D2D3D] space-y-6"
           >
             {/* Active Quiz Header / Timer */}
-            <div className="flex justify-between items-center border-b border-gray-100 dark:border-[#2D2D3D]/60 pb-3">
-              <div className="space-y-0.5">
+            <div className="flex flex-col sm:flex-row gap-3 justify-between items-center border-b border-gray-100 dark:border-[#2D2D3D]/60 pb-3">
+              <div className="space-y-0.5 text-right w-full sm:w-auto">
                 <span className="text-[10px] text-[#00B4D8] dark:text-[#D4AF37] font-black">جاري حل الاختبار الآن</span>
                 <h3 className="text-base font-black text-gray-900 dark:text-white">{quiz.title}</h3>
               </div>
 
-              {/* Timer Countdown widget */}
-              {/* Replaced with progress bars below */}
+              {/* Elegant Protection Badge */}
+              <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100/60 dark:border-indigo-900/35 rounded-xl">
+                <Shield className="w-3.5 h-3.5 text-indigo-500 shrink-0 animate-pulse" />
+                <div className="text-right">
+                  <p className="text-[8px] text-indigo-600 dark:text-indigo-400 font-black leading-none">نظام مراقبة التبويب نشط 🔒</p>
+                  <p className="text-[9px] text-gray-500 dark:text-gray-300 font-bold mt-0.5">
+                    الخروج من الصفحة: <span className={infractions > 0 ? "text-red-500 font-black" : "text-emerald-500 font-black"}>{infractions} / 3</span>
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Enhanced Progress Bars */}
@@ -977,7 +1107,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
             <div className="space-y-4">
               <div className="p-5 sm:p-6 bg-gray-50 dark:bg-[#222230] rounded-2xl border border-gray-100 dark:border-[#2D2D3D]">
                 <span className="text-[10px] bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 text-[#00B4D8] dark:text-[#D4AF37] px-2 py-1 rounded-md font-bold mb-3 inline-block">
-                  {quiz.questions[currentQuestionIdx].points} نقاط
+                  {quiz.questions[currentQuestionIdx].points} نجوم
                 </span>
                 <p className="text-sm sm:text-base font-black text-gray-900 dark:text-white leading-relaxed">
                   {quiz.questions[currentQuestionIdx].text}
@@ -1052,6 +1182,56 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
           </motion.div>
         )}
 
+        {/* State B Infraction Warning Modal */}
+        {showInfractionWarning && infractions < 3 && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/75 backdrop-blur-md"
+              onClick={() => setShowInfractionWarning(false)}
+            />
+            
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative bg-white dark:bg-[#12121A] rounded-3xl p-6 max-w-md w-full shadow-2xl border border-red-500/30 space-y-6 text-center z-10"
+            >
+              <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto animate-bounce">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+
+              <div className="space-y-2 text-center">
+                <h3 className="text-lg font-black text-red-650 dark:text-red-400">⚠️ تحذير: تم كشف مغادرة صفحة الاختبار!</h3>
+                <p className="text-xs text-gray-400 font-bold">نظام الحماية وقفل التبويب الإلكتروني</p>
+              </div>
+
+              <div className="space-y-4 text-right bg-red-50/50 dark:bg-red-950/10 p-4 rounded-2xl border border-red-100 dark:border-red-900/20">
+                <p className="text-xs text-gray-750 dark:text-gray-300 leading-relaxed font-bold font-sans">
+                  لقد قمت بالخروج من تبويب أو نافذة الاختبار التفاعلي. هذا السلوك مخالف لتعليمات الامتحان الإلكتروني وقد يُعرضك لإلغاء النتيجة.
+                </p>
+                <div className="flex justify-between items-center text-xs font-black border-t border-red-100 dark:border-red-900/10 pt-3 mt-1">
+                  <span className="text-gray-500">عدد المخالفات المسجلة:</span>
+                  <span className="text-red-500 font-black text-sm">{infractions} من أصل 3 محاولات</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/10 rounded-xl text-[10px] text-amber-600 dark:text-amber-400 font-black text-right flex gap-1.5 items-start">
+                <Shield className="w-3.5 h-3.5 shrink-0 animate-pulse mt-0.5" />
+                <span>تنبيه هام: إذا وصلت المخالفات إلى 3، فسيقوم النظام تلقائياً بإنهاء الاختبار وتسليم إجاباتك الحالية فوراً مع تسجيل تقرير غش!</span>
+              </div>
+
+              <button
+                onClick={() => setShowInfractionWarning(false)}
+                className="w-full py-3.5 bg-red-600 hover:bg-red-750 text-white rounded-xl text-xs font-black transition-all shadow-lg shadow-red-600/20 cursor-pointer"
+              >
+                أفهم ذلك، العودة لحل الاختبار ✍️
+              </button>
+            </motion.div>
+          </div>
+        )}
+
         {/* State C: Review Mode (Show submission results breakdown with full scientific explanations!) */}
         {reviewMode && submission && (
           <motion.div
@@ -1106,11 +1286,34 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                     <span className="text-base font-black text-green-500 font-sans">{submission.correctAnswers} / {submission.totalQuestions}</span>
                   </div>
                   <div className="p-3 bg-gray-50 dark:bg-[#222230] rounded-xl text-center">
-                    <span className="text-[10px] text-gray-400 block font-bold">النقاط المكتسبة</span>
-                    <span className="text-base font-black text-[#00B4D8] dark:text-[#D4AF37] font-sans">+{submission.passed ? submission.score : 0} نقطة</span>
+                    <span className="text-[10px] text-gray-400 block font-bold">النجوم المكتسبة</span>
+                    <span className="text-base font-black text-[#00B4D8] dark:text-[#D4AF37] font-sans">+{submission.passed ? submission.score : 0} نجمة</span>
                   </div>
                 </div>
               </div>
+
+              {/* Infractions summary box for student */}
+              {(submission.infractionsCount !== undefined || submission.cheatedViolation) && (
+                <div className={`p-3 rounded-xl text-xs font-black text-right flex gap-2 items-start border w-full ${
+                  submission.cheatedViolation
+                    ? "bg-red-50/60 dark:bg-red-950/20 border-red-200 dark:border-red-900/30 text-red-600 dark:text-red-400"
+                    : (submission.infractionsCount || 0) > 0
+                      ? "bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/30 text-amber-600 dark:text-amber-400"
+                      : "bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-400"
+                }`}>
+                  <Shield className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-black text-[11px]">مؤشرات الأمان ومصداقية حل الدرس:</p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-300 font-bold mt-0.5 leading-normal">
+                      {submission.cheatedViolation
+                        ? "تم إلغاء نتيجة هذا الاختبار تلقائياً وتصفير الدرجة بسبب الخروج من تبويب الصفحة 3 مرات غش."
+                        : (submission.infractionsCount || 0) > 0
+                          ? `تم رصد عدد ${submission.infractionsCount} محاولات خروج أو تغيير التبويب أثناء حل أسئلة الدرس.`
+                          : "مصداقية أدائك كاملة 100%! لم يتم تسجيل أي خروج من صفحة الاختبار التفاعلي 👍"}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-between items-center bg-[#00B4D8]/5 dark:bg-[#D4AF37]/5 p-3.5 rounded-xl border border-[#00B4D8]/10 dark:border-[#D4AF37]/10 text-xs">
                 <span className="text-gray-600 dark:text-gray-300 flex items-center gap-1.5 font-medium">
@@ -1145,7 +1348,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                           سؤال {idx + 1}
                         </span>
                         <span className="text-xs font-bold text-gray-400 font-sans">
-                          {isCorrect ? `${q.points} من ${q.points} نقاط` : '0 من 0 نقاط'}
+                          {isCorrect ? `${q.points} من ${q.points} نجوم` : '0 من 0 نجوم'}
                         </span>
                       </div>
                       <p className="text-xs sm:text-sm font-black text-gray-900 dark:text-white leading-relaxed">{q.text}</p>
@@ -1231,7 +1434,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                     </h3>
                     <p className="text-xs text-white/90 leading-relaxed max-w-md">
                       {submission.passed
-                        ? 'رائع جداً! لقد أظهرت فهماً ممتازاً لنقاط الدرس واستحقيت نقاط Teachland المضافة لرصيدك.'
+                        ? 'رائع جداً! لقد أظهرت فهماً ممتازاً لنجوم الدرس واستحقيت نجوم Teachland المضافة لرصيدك.'
                         : 'لا بأس بالخطأ، فهو طريق التعلم الأول. راجع التفسير العلمي المبسط أدناه لتجنب الأخطاء لاحقاً.'}
                     </p>
                   </div>
@@ -1283,11 +1486,11 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
 
                   {/* Points Earned */}
                   <div className="p-4 bg-gray-50 dark:bg-[#222230] rounded-2xl border border-gray-100 dark:border-[#2D2D3D]/50 flex flex-col items-center justify-center text-center">
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-black mb-1">نقاط Teachland المكتسبة</span>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 block font-black mb-1">نجوم Teachland المكتسبة</span>
                     <span className="text-2xl font-black text-[#00B4D8] dark:text-[#D4AF37] font-sans mt-1">
                       {submission.passed ? `+${submission.score}` : '0'}
                     </span>
-                    <span className="text-[9px] text-gray-400 dark:text-gray-500 mt-1">🏆 نقاط مضافة للملف</span>
+                    <span className="text-[9px] text-gray-400 dark:text-gray-500 mt-1">🏆 نجوم مضافة للملف</span>
                   </div>
                 </div>
 
@@ -1332,7 +1535,7 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                                   سؤال يحتاج لمراجعة #{mIdx + 1}
                                 </span>
                                 <span className="text-[10px] text-gray-400 font-sans font-bold">
-                                  قيمة السؤال: {q.points} نقاط
+                                  قيمة السؤال: {q.points} نجوم
                                 </span>
                               </div>
                               

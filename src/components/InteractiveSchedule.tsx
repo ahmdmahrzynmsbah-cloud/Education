@@ -98,7 +98,7 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
   // Handle reminder saving
   useEffect(() => {
     localStorage.setItem(`schedule_reminders_${userData?.id || "anon"}`, JSON.stringify(reminders));
-  }, [reminders, userData]);
+  }, [reminders, userData?.id]);
 
   // Check if any class starts soon (within 15 mins) or is currently ongoing
   const [activeAlert, setActiveAlert] = useState<ScheduleEvent | null>(null);

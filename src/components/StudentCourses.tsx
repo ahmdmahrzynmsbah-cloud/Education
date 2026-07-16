@@ -27,6 +27,7 @@ export default function StudentCourses({ userData }: StudentCoursesProps) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
+    if (!userData) return;
     const subjectParam = searchParams.get('subject');
     if (subjectParam) {
       setSelectedSubject(subjectParam);
@@ -35,9 +36,10 @@ export default function StudentCourses({ userData }: StudentCoursesProps) {
     }
     // Reset teacher filter when subject changes
     setFilterTeacherId('');
-  }, [searchParams]);
+  }, [searchParams, userData?.id]);
 
   useEffect(() => {
+    if (!userData) return;
     setLoading(true);
 
     // 1. Subscribe to courses in real-time
@@ -113,7 +115,7 @@ export default function StudentCourses({ userData }: StudentCoursesProps) {
     return () => {
       unsubscribeCourses();
     };
-  }, [userData]);
+  }, [userData?.id, userData?.grade]);
 
   // Compute stats per teacher
   const teacherStats = useMemo(() => {
@@ -185,6 +187,14 @@ export default function StudentCourses({ userData }: StudentCoursesProps) {
       return isPublished && matchesSubject && matchesGrade && matchesTeacher && matchesSearch;
     });
   }, [courses, selectedSubject, userData?.grade, filterTeacherId, searchTerm]);
+
+  if (!userData) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <LuxuriousLoader size="md" text="جاري تحميل البيانات..." />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto py-4 px-2" dir="rtl">

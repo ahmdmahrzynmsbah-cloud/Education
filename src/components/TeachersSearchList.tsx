@@ -144,7 +144,7 @@ export default function TeachersSearchList({ userData }: TeachersSearchListProps
     if (userData?.grade) {
       setSelectedGrade(userData.grade);
     }
-  }, [userData]);
+  }, [userData?.grade]);
 
   // Filter teachers based on criteria
   const filteredTeachers = useMemo(() => {

@@ -16,6 +16,12 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isAdmin() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     // 1. Users collection
     // Leaderboard and public student profiles are read on LandingPage and Dashboard.
     match /users/{userId} {
@@ -125,6 +131,13 @@ service cloud.firestore {
     // 16. Course Payments collection
     match /course_payments/{paymentId} {
       allow read, write: if isSignedIn();
+    }
+
+    // 17. Recharge Codes collection
+    match /recharge_codes/{codeId} {
+      allow read, write: if isAdmin();
+      allow get: if isSignedIn();
+      allow update: if isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedByName', 'usedAt']);
     }
   }
 }

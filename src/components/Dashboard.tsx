@@ -1,11 +1,12 @@
 import React from "react";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, HelpCircle, Lock, BookOpen, Star, MessageCircleQuestion, CheckCircle, Ticket, LogOut, Trophy, Flame, Bell, Target, ArrowLeft, Video, Bot, Users, Activity, User as UserIcon, Wallet, ArrowUpRight, ArrowDownLeft, Smartphone, CreditCard, PiggyBank, RefreshCw, Send, Sparkles, Loader2, DollarSign, Check, History, Award, Edit2, Edit3, Save, X, Clock, Trash2, Plus , Shield } from 'lucide-react';
+import { Play, HelpCircle, Lock, BookOpen, Star, MessageCircleQuestion, CheckCircle, Ticket, LogOut, Trophy, Flame, Bell, Target, ArrowLeft, Video, Bot, Users, Activity, User as UserIcon, Wallet, ArrowUpRight, ArrowDownLeft, Smartphone, CreditCard, PiggyBank, RefreshCw, Send, Sparkles, Loader2, DollarSign, Check, History, Award, Edit2, Edit3, Save, X, Clock, Trash2, Plus , Shield, Info } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, Toaster } from 'react-hot-toast';
 import ThemeToggle from './ThemeToggle';
 import AdminPanel from './AdminPanel';
+import AdminCoursesPanel from './AdminCoursesPanel';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc, collection, query, where, orderBy, onSnapshot, updateDoc, getDocs, addDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
@@ -49,8 +50,10 @@ export default function Dashboard() {
   }, [tabQuery]);
   const [activationStatus, setActivationStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [code, setCode] = useState('');
+  const [isActivating, setIsActivating] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const userDataLoadedRef = useRef(false);
 
   // Quizzes & Exams State
   const [quizzesList, setQuizzesList] = useState<any[]>([]);
@@ -101,6 +104,16 @@ export default function Dashboard() {
   const [isSubmittingPayout, setIsSubmittingPayout] = useState(false);
   const [showChargeForm, setShowChargeForm] = useState(false);
 
+  // Direct / Publish Exam Modal States
+  const [directingQuiz, setDirectingQuiz] = useState<any | null>(null);
+  const [directTargetType, setDirectTargetType] = useState<'all' | 'grade' | 'custom'>('all');
+  const [directTargetGrade, setDirectTargetGrade] = useState('الأول الثانوي');
+  const [directTargetStudentIds, setDirectTargetStudentIds] = useState<string[]>([]);
+  const [allStudents, setAllStudents] = useState<any[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [savingDirecting, setSavingDirecting] = useState(false);
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
+
   // Dynamic Teacher & Parent Stats States
   const [teacherStudentsCount, setTeacherStudentsCount] = useState(0);
   const [teacherViewsCount, setTeacherViewsCount] = useState(0);
@@ -140,7 +153,7 @@ export default function Dashboard() {
       console.warn("Failed to listen to quick notes count:", err);
     });
     return () => unsubscribe();
-  }, [userData]);
+  }, [userData?.id, userData?.role]);
 
   const handleMiniNoteSave = async () => {
     if (!miniNoteContent.trim()) {
@@ -236,7 +249,7 @@ export default function Dashboard() {
             <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                <Sparkles className="w-10 h-10 text-yellow-500 mx-auto mb-3 animate-pulse" />
                <p className="font-bold text-base text-gray-900 dark:text-white">كن أول من يتصدر دوري Teachland! 🏆</p>
-               <p className="text-xs mt-1">ابدأ بدراسة كورساتك الآن وتجميع النقاط لتظهر هنا</p>
+               <p className="text-xs mt-1">ابدأ بدراسة كورساتك الآن وتجميع النجوم لتظهر هنا</p>
             </div>
          ) : (
             dashboardLeaderboard.map((student, index) => {
@@ -270,7 +283,7 @@ export default function Dashboard() {
                         </div>
                      </div>
                      <div className="font-black text-sm flex items-center gap-1.5 text-gray-900 dark:text-white">
-                        <span className="text-[#0077B6] dark:text-[#D4AF37]">{(student.points || 0).toLocaleString('ar-EG')}</span>
+                        <span className="text-[#0077B6] dark:text-[#D4AF37]">{(student.stars || 0).toLocaleString('ar-EG')}</span>
                         <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                      </div>
                   </div>
@@ -287,53 +300,40 @@ export default function Dashboard() {
       if (!userData?.id || (activeTab !== 'quizzes' && activeTab !== 'league')) return;
       setLoadingQuizzes(true);
       try {
-        // Fetch courses to resolve course names
         const qCourses = userData.role === 'teacher'
           ? query(collection(db, 'courses'), where('teacherId', '==', userData.id))
           : query(collection(db, 'courses'));
-        const courseSnap = await getDocs(qCourses);
-        const fetchedCourses = courseSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setCoursesList(fetchedCourses);
 
         if (userData.role === 'student') {
-          // 1. Fetch all quizzes
-          const qQuiz = query(collection(db, 'quizzes'));
-          const quizSnap = await getDocs(qQuiz);
-          const allQuizzes = quizSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-          // 2. Fetch submissions for this student
-          const qSub = query(collection(db, 'quiz_submissions'), where('userId', '==', userData.id));
-          const subSnap = await getDocs(qSub);
-          const studentSubs = subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-          setQuizzesList(allQuizzes);
-          setSubmissionsList(studentSubs);
+          // Fetch courses, quizzes, and submissions in parallel
+          const [courseSnap, quizSnap, subSnap] = await Promise.all([
+            getDocs(qCourses),
+            getDocs(query(collection(db, 'quizzes'))),
+            getDocs(query(collection(db, 'quiz_submissions'), where('userId', '==', userData.id)))
+          ]);
+          setCoursesList(courseSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          setQuizzesList(quizSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          setSubmissionsList(subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         } else if (userData.role === 'teacher') {
-          // 1. Fetch quizzes created by this teacher
-          const qQuiz = query(collection(db, 'quizzes'), where('createdBy', '==', userData.id));
-          const quizSnap = await getDocs(qQuiz);
-          const teacherQuizzes = quizSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-          // 2. Fetch all submissions for those quizzes
-          const qSub = query(collection(db, 'quiz_submissions'));
-          const subSnap = await getDocs(qSub);
-          const allSubs = subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-          setQuizzesList(teacherQuizzes);
-          setSubmissionsList(allSubs);
+          // Fetch courses, teacher's quizzes, and submissions in parallel
+          const [courseSnap, quizSnap, subSnap] = await Promise.all([
+            getDocs(qCourses),
+            getDocs(query(collection(db, 'quizzes'), where('createdBy', '==', userData.id))),
+            getDocs(query(collection(db, 'quiz_submissions')))
+          ]);
+          setCoursesList(courseSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          setQuizzesList(quizSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          setSubmissionsList(subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         } else if (userData.role === 'parent' && linkedStudent?.id) {
-          // 1. Fetch submissions for the linked student
-          const qSub = query(collection(db, 'quiz_submissions'), where('userId', '==', linkedStudent.id));
-          const subSnap = await getDocs(qSub);
-          const studentSubs = subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-          // 2. Fetch quizzes
-          const qQuiz = query(collection(db, 'quizzes'));
-          const quizSnap = await getDocs(qQuiz);
-          const allQuizzes = quizSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-          setQuizzesList(allQuizzes);
-          setSubmissionsList(studentSubs);
+          // Fetch courses, student submissions, and quizzes in parallel
+          const [courseSnap, subSnap, quizSnap] = await Promise.all([
+            getDocs(qCourses),
+            getDocs(query(collection(db, 'quiz_submissions'), where('userId', '==', linkedStudent.id))),
+            getDocs(query(collection(db, 'quizzes')))
+          ]);
+          setCoursesList(courseSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          setSubmissionsList(subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          setQuizzesList(quizSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         }
       } catch (err) {
         console.error("Error fetching quizzes or submissions:", err);
@@ -344,7 +344,58 @@ export default function Dashboard() {
     };
 
     fetchQuizzesAndSubmissions();
-  }, [activeTab, userData, linkedStudent]);
+  }, [activeTab, userData?.id, userData?.role, linkedStudent?.id]);
+
+  // Load students for directing when needed
+  useEffect(() => {
+    const fetchStudentsForDirecting = async () => {
+      if (!directingQuiz || userData?.role !== 'teacher') return;
+      setLoadingStudents(true);
+      try {
+        const q = query(collection(db, 'users'), where('role', '==', 'student'));
+        const snap = await getDocs(q);
+        const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllStudents(list);
+      } catch (err) {
+        console.error("Error fetching students:", err);
+        toast.error("فشل تحميل قائمة الطلاب للتوجيه");
+      } finally {
+        setLoadingStudents(false);
+      }
+    };
+    fetchStudentsForDirecting();
+  }, [directingQuiz, userData]);
+
+  const handleSaveDirecting = async () => {
+    if (!directingQuiz) return;
+    setSavingDirecting(true);
+    try {
+      const quizRef = doc(db, 'quizzes', directingQuiz.id);
+      const updateData = {
+        isHidden: false, // publishing it!
+        targetedType: directTargetType,
+        targetedGrade: directTargetType === 'grade' ? directTargetGrade : 'all',
+        targetedStudentIds: directTargetType === 'custom' ? directTargetStudentIds : []
+      };
+      await updateDoc(quizRef, updateData);
+
+      // Update in local state list
+      setQuizzesList(prev => prev.map(q => q.id === directingQuiz.id ? { ...q, ...updateData } : q));
+      
+      // Update selected quiz if it is the one being edited
+      if (teacherSelectedQuiz?.id === directingQuiz.id) {
+        setTeacherSelectedQuiz(prev => ({ ...prev, ...updateData }));
+      }
+
+      toast.success("تم توجيه ونشر الاختبار بنجاح! 🚀");
+      setDirectingQuiz(null);
+    } catch (err) {
+      console.error("Error directing quiz:", err);
+      toast.error("فشل حفظ إعدادات توجيه الاختبار");
+    } finally {
+      setSavingDirecting(false);
+    }
+  };
 
   // Student Exam Timer useEffect
   useEffect(() => {
@@ -559,29 +610,30 @@ export default function Dashboard() {
       setLoadingStars(true);
       try {
         if (userData.role === 'student') {
-          // 1. Enrolled courses (200 points each)
+          // Fetch courses, progress, and submissions in parallel
           const qCourses = query(
             collection(db, 'courses'),
             where('enrolledStudentIds', 'array-contains', userData.id)
           );
-          const snapshotCourses = await getDocs(qCourses);
-          const enrolledCount = snapshotCourses.size;
-
-          // 2. Course Progress interactions (150 points each)
           const qProgress = query(
             collection(db, 'course_progress'),
             where('userId', '==', userData.id)
           );
-          const snapshotProgress = await getDocs(qProgress);
-          const progressCount = snapshotProgress.size;
-
-          // 3. Exam Submissions points (Comprehensive/League exams)
           const qSubmissions = query(
             collection(db, 'quiz_submissions'),
             where('userId', '==', userData.id),
             where('lessonId', '==', 'comprehensive')
           );
-          const snapshotSubmissions = await getDocs(qSubmissions);
+
+          const [snapshotCourses, snapshotProgress, snapshotSubmissions] = await Promise.all([
+            getDocs(qCourses),
+            getDocs(qProgress),
+            getDocs(qSubmissions)
+          ]);
+
+          const enrolledCount = snapshotCourses.size;
+          const progressCount = snapshotProgress.size;
+
           let examPoints = 0;
           snapshotSubmissions.forEach(doc => {
             const subData = doc.data();
@@ -593,34 +645,40 @@ export default function Dashboard() {
           // Stars = (Enrolled * 200) + (Progress * 150) + ExamPoints + 500 (Base/Welcome gift) - 500 if joined league
           const totalStars = (enrolledCount * 200) + (progressCount * 150) + examPoints + 500 - (userData?.leagueJoined ? 500 : 0);
           setStarsCount(totalStars);
-          try {
-            await updateDoc(doc(db, 'users', userData.id), { points: totalStars });
-          } catch (e) {
-            console.warn("Failed to update student points in background:", e);
+          
+          // CRITICAL: Only write to firestore if the stars count actually changed!
+          if (userData.stars !== totalStars) {
+            try {
+              await updateDoc(doc(db, 'users', userData.id), { stars: totalStars });
+            } catch (e) {
+              console.warn("Failed to update student points in background:", e);
+            }
           }
         } else if (userData.role === 'parent' && linkedStudent?.id) {
-          // Parent views the linked student's stars
+          // Parent views the linked student's stars in parallel
           const qCourses = query(
             collection(db, 'courses'),
             where('enrolledStudentIds', 'array-contains', linkedStudent.id)
           );
-          const snapshotCourses = await getDocs(qCourses);
-          const enrolledCount = snapshotCourses.size;
-
           const qProgress = query(
             collection(db, 'course_progress'),
             where('userId', '==', linkedStudent.id)
           );
-          const snapshotProgress = await getDocs(qProgress);
-          const progressCount = snapshotProgress.size;
-
-          // Exam Submissions points for linked student
           const qSubmissions = query(
             collection(db, 'quiz_submissions'),
             where('userId', '==', linkedStudent.id),
             where('lessonId', '==', 'comprehensive')
           );
-          const snapshotSubmissions = await getDocs(qSubmissions);
+
+          const [snapshotCourses, snapshotProgress, snapshotSubmissions] = await Promise.all([
+            getDocs(qCourses),
+            getDocs(qProgress),
+            getDocs(qSubmissions)
+          ]);
+
+          const enrolledCount = snapshotCourses.size;
+          const progressCount = snapshotProgress.size;
+
           let examPoints = 0;
           snapshotSubmissions.forEach(doc => {
             const subData = doc.data();
@@ -643,10 +701,13 @@ export default function Dashboard() {
 
           const totalStars = (totalEnrolled * 100) + (coursesCount * 300) + 1000;
           setStarsCount(totalStars);
-          try {
-            await updateDoc(doc(db, 'users', userData.id), { points: totalStars });
-          } catch (e) {
-            console.warn("Failed to update teacher points in background:", e);
+          
+          if (userData.stars !== totalStars) {
+            try {
+              await updateDoc(doc(db, 'users', userData.id), { stars: totalStars });
+            } catch (e) {
+              console.warn("Failed to update teacher points in background:", e);
+            }
           }
         }
       } catch (err) {
@@ -657,11 +718,11 @@ export default function Dashboard() {
     };
 
     fetchStars();
-  }, [userData, linkedStudent, starsReloadTrigger]);
+  }, [activeTab, userData?.id, userData?.role, userData?.leagueJoined, linkedStudent?.id, linkedStudent?.leagueJoined, starsReloadTrigger]);
 
   // Fetch real and precise Continue Learning item for Student
   useEffect(() => {
-    if (!userData || userData.role !== 'student') return;
+    if (!userData?.id || userData.role !== 'student') return;
 
     const fetchContinueLearning = async () => {
       setLoadingContinueLearning(true);
@@ -702,17 +763,15 @@ export default function Dashboard() {
         }
 
         if (targetCourseId) {
-          // Fetch Course details
-          const courseDoc = await getDoc(doc(db, 'courses', targetCourseId));
+          // Fetch Course details and Lessons of this course in parallel!
+          const [courseDoc, lessonsSnap] = await Promise.all([
+            getDoc(doc(db, 'courses', targetCourseId)),
+            getDocs(query(collection(db, 'lessons'), where('courseId', '==', targetCourseId)))
+          ]);
+
           if (courseDoc.exists()) {
             const courseData = courseDoc.data();
             
-            // Fetch Lessons of this course
-            const qLessons = query(
-              collection(db, 'lessons'),
-              where('courseId', '==', targetCourseId)
-            );
-            const lessonsSnap = await getDocs(qLessons);
             let lessonsList: any[] = [];
             lessonsSnap.forEach(ldoc => {
               lessonsList.push({ id: ldoc.id, ...ldoc.data() });
@@ -773,7 +832,7 @@ export default function Dashboard() {
     };
 
     fetchContinueLearning();
-  }, [userData]);
+  }, [activeTab, userData?.id, userData?.role]);
 
   // Fetch dynamic stats for teachers
   useEffect(() => {
@@ -782,7 +841,18 @@ export default function Dashboard() {
         setLoadingTeacherStats(true);
         try {
           const qCourses = query(collection(db, 'courses'), where('teacherId', '==', userData.id));
-          const snapshotCourses = await getDocs(qCourses);
+          const qNotifs = query(
+            collection(db, 'notifications'),
+            where('userId', '==', userData.id),
+            where('type', '==', 'enrollment')
+          );
+
+          // Fetch courses and notifications in parallel
+          const [snapshotCourses, snapshotNotifs] = await Promise.all([
+            getDocs(qCourses),
+            getDocs(qNotifs)
+          ]);
+
           const fetchedCourses = snapshotCourses.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
           setTeacherCoursesCount(fetchedCourses.length);
           
@@ -791,9 +861,16 @@ export default function Dashboard() {
 
           let totalViews = 0;
           const coursesChartData: any[] = [];
-          for (const course of fetchedCourses) {
-            const qLessons = query(collection(db, 'lessons'), where('courseId', '==', course.id));
-            const snapshotLessons = await getDocs(qLessons);
+
+          // Fetch all lessons for all courses in parallel
+          const lessonsSnapshots = await Promise.all(
+            fetchedCourses.map(course =>
+              getDocs(query(collection(db, 'lessons'), where('courseId', '==', course.id)))
+            )
+          );
+
+          fetchedCourses.forEach((course, idx) => {
+            const snapshotLessons = lessonsSnapshots[idx];
             let views = 0;
             snapshotLessons.forEach(lessonDoc => {
               views += (lessonDoc.data().views || 0);
@@ -805,17 +882,10 @@ export default function Dashboard() {
               students: course.enrolledStudents || 0,
               views: views
             });
-          }
+          });
+
           setTeacherViewsCount(totalViews);
           setTeacherChartData(coursesChartData);
-
-          // Fetch enrollment notifications to build the trend
-          const qNotifs = query(
-            collection(db, 'notifications'),
-            where('userId', '==', userData.id),
-            where('type', '==', 'enrollment')
-          );
-          const snapshotNotifs = await getDocs(qNotifs);
           
           // Let's group notifications by day
           const enrollmentsByDay: { [key: string]: number } = {};
@@ -855,7 +925,7 @@ export default function Dashboard() {
       };
       fetchTeacherStats();
     }
-  }, [userData]);
+  }, [activeTab, userData?.id, userData?.role]);
 
   // Fetch dynamic stats for parents
   useEffect(() => {
@@ -867,14 +937,18 @@ export default function Dashboard() {
             collection(db, 'courses'),
             where('enrolledStudentIds', 'array-contains', linkedStudent.id)
           );
-          const snapshotCourses = await getDocs(qCourses);
-          const enrolledCount = snapshotCourses.size;
-
           const qProgress = query(
             collection(db, 'course_progress'),
             where('userId', '==', linkedStudent.id)
           );
-          const snapshotProgress = await getDocs(qProgress);
+
+          // Fetch parent/linked student data in parallel
+          const [snapshotCourses, snapshotProgress] = await Promise.all([
+            getDocs(qCourses),
+            getDocs(qProgress)
+          ]);
+
+          const enrolledCount = snapshotCourses.size;
           const progressCount = snapshotProgress.size;
 
           const levelVal = enrolledCount > 0 
@@ -907,7 +981,7 @@ export default function Dashboard() {
         attendance: '0%'
       });
     }
-  }, [userData, linkedStudent]);
+  }, [activeTab, userData?.id, userData?.role, linkedStudent?.id]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const notificationsRef = React.useRef<HTMLDivElement>(null);
@@ -929,19 +1003,177 @@ export default function Dashboard() {
     const unsubscribeAuth = auth.onAuthStateChanged((user) => {
       if (user) {
         const docRef = doc(db, 'users', user.uid);
+        const emailLower = user.email ? user.email.toLowerCase() : '';
         
         // Safety timeout to prevent infinite loader if the document genuinely does not exist or fails to load
         timeoutId = setTimeout(() => {
+          if (!userDataLoadedRef.current) {
+            console.error("Timeout: User data could not be loaded from Firestore.");
+            toast.error("عذراً، لم نتمكن من تحميل بيانات حسابك. يرجى تسجيل الدخول مرة أخرى.");
+            auth.signOut().then(() => {
+              navigate('/login');
+            });
+          }
           setLoading(false);
         }, 5000);
 
-        unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+        unsubscribeSnapshot = onSnapshot(docRef, async (docSnap) => {
           if (docSnap.exists()) {
             if (timeoutId) clearTimeout(timeoutId);
+            userDataLoadedRef.current = true;
             setUserData({ id: docSnap.id, ...docSnap.data() });
             setLoading(false);
+          } else if (emailLower) {
+            // Fallback query by email if UID doc doesn't exist
+            const q = query(collection(db, 'users'), where('email', '==', emailLower));
+            getDocs(q).then(async (querySnap) => {
+              if (!querySnap.empty) {
+                const docSnapFallback = querySnap.docs[0];
+                const legacyData = docSnapFallback.data();
+                
+                // Migrate legacy user document to be identified by user.uid
+                try {
+                  await setDoc(doc(db, 'users', user.uid), {
+                    ...legacyData,
+                    id: user.uid
+                  });
+                  // Delete the legacy doc with random ID if it's different from user.uid
+                  if (docSnapFallback.id !== user.uid) {
+                    await deleteDoc(doc(db, 'users', docSnapFallback.id));
+                  }
+                  console.log("Successfully migrated user document to use UID as ID");
+                } catch (migrationError) {
+                  console.error("Error migrating user document to use UID:", migrationError);
+                  // Fallback without migrating if permission denied or error
+                  if (timeoutId) clearTimeout(timeoutId);
+                  userDataLoadedRef.current = true;
+                  setUserData({ id: docSnapFallback.id, ...legacyData });
+                  setLoading(false);
+                }
+              } else {
+                // If querySnap.empty is true, auto-create a user document for this email
+                console.log("No user document found for email:", emailLower, ". Auto-creating default user document.");
+                const defaultName = user.displayName || (emailLower ? emailLower.split('@')[0] : 'مستخدم جديد');
+                const defaultRole = emailLower.includes('admin') ? 'admin' : (emailLower.includes('teacher') ? 'teacher' : 'student');
+                
+                const defaultUserDoc = {
+                  id: user.uid,
+                  email: emailLower,
+                  name: defaultName,
+                  phone: '01000000000',
+                  governorate: 'القاهرة',
+                  role: defaultRole,
+                  createdAt: new Date().toISOString(),
+                  isApproved: true,
+                  stars: 0,
+                  points: 0,
+                  ...(defaultRole === 'student' ? {
+                    grade: 'الأول الثانوي',
+                    school: 'المدرسة الثانوية',
+                    parentPhone: '01100000000'
+                  } : {}),
+                  ...(defaultRole === 'teacher' ? {
+                    subject: 'الفيزياء',
+                    nationalId: '12345678901234',
+                    dateOfBirth: '1990-01-01',
+                    teachingGrades: ['الأول الثانوي', 'الثاني الثانوي', 'الثالث الثانوي']
+                  } : {})
+                };
+
+                try {
+                  await setDoc(doc(db, 'users', user.uid), defaultUserDoc);
+                  console.log("Auto-created default user document for user:", user.uid);
+                  if (timeoutId) clearTimeout(timeoutId);
+                  userDataLoadedRef.current = true;
+                  setUserData(defaultUserDoc);
+                  setLoading(false);
+                } catch (createError) {
+                  console.error("Failed to auto-create user document:", createError);
+                  if (timeoutId) clearTimeout(timeoutId);
+                  toast.error("لم نتمكن من تهيئة بيانات حسابك في قاعدة البيانات.");
+                  auth.signOut().then(() => {
+                    navigate('/login');
+                  });
+                  setLoading(false);
+                }
+              }
+            }).catch(async (err) => {
+              console.error("Error fetching fallback user data by email:", err);
+              // Try to auto-create even if query fails
+              const defaultName = user.displayName || (emailLower ? emailLower.split('@')[0] : 'مستخدم جديد');
+              const defaultRole = emailLower.includes('admin') ? 'admin' : (emailLower.includes('teacher') ? 'teacher' : 'student');
+              const defaultUserDoc = {
+                id: user.uid,
+                email: emailLower,
+                name: defaultName,
+                phone: '01000000000',
+                governorate: 'القاهرة',
+                role: defaultRole,
+                createdAt: new Date().toISOString(),
+                isApproved: true,
+                stars: 0,
+                points: 0,
+                ...(defaultRole === 'student' ? {
+                  grade: 'الأول الثانوي',
+                  school: 'المدرسة الثانوية',
+                  parentPhone: '01100000000'
+                } : {}),
+                ...(defaultRole === 'teacher' ? {
+                  subject: 'الفيزياء',
+                  nationalId: '12345678901234',
+                  dateOfBirth: '1990-01-01',
+                  teachingGrades: ['الأول الثانوي', 'الثاني الثانوي', 'الثالث الثانوي']
+                } : {})
+              };
+
+              try {
+                await setDoc(doc(db, 'users', user.uid), defaultUserDoc);
+                console.log("Auto-created default user document after query failure for user:", user.uid);
+                if (timeoutId) clearTimeout(timeoutId);
+                userDataLoadedRef.current = true;
+                setUserData(defaultUserDoc);
+                setLoading(false);
+              } catch (createError) {
+                console.error("Failed to auto-create user document after query failure:", createError);
+                if (timeoutId) clearTimeout(timeoutId);
+                setLoading(false);
+              }
+            });
           } else {
-            console.log("User document does not exist in Firestore yet, waiting for registration to write it...");
+            // No email and no UID document - Auto-create with random email-like name or placeholder
+            console.log("No document and no email available for user:", user.uid, ". Auto-creating user profile.");
+            const defaultUserDoc = {
+              id: user.uid,
+              email: emailLower || `${user.uid}@placeholder.com`,
+              name: user.displayName || 'طالب جديد',
+              phone: '01000000000',
+              governorate: 'القاهرة',
+              role: 'student',
+              createdAt: new Date().toISOString(),
+              isApproved: true,
+              stars: 0,
+              points: 0,
+              grade: 'الأول الثانوي',
+              school: 'المدرسة الثانوية',
+              parentPhone: '01100000000'
+            };
+
+            try {
+              await setDoc(doc(db, 'users', user.uid), defaultUserDoc);
+              console.log("Auto-created default user document for uid:", user.uid);
+              if (timeoutId) clearTimeout(timeoutId);
+              userDataLoadedRef.current = true;
+              setUserData(defaultUserDoc);
+              setLoading(false);
+            } catch (createError) {
+              console.error("Failed to auto-create user document without email:", createError);
+              if (timeoutId) clearTimeout(timeoutId);
+              toast.error("لم نتمكن من تهيئة بيانات حسابك في قاعدة البيانات.");
+              auth.signOut().then(() => {
+                navigate('/login');
+              });
+              setLoading(false);
+            }
           }
         }, (error) => {
           console.error("Error listening to user data in real-time:", error);
@@ -954,6 +1186,7 @@ export default function Dashboard() {
           unsubscribeSnapshot();
           unsubscribeSnapshot = null;
         }
+        userDataLoadedRef.current = false;
         setUserData(null);
         navigate('/login');
         setLoading(false);
@@ -1019,14 +1252,14 @@ export default function Dashboard() {
     } else {
       setLinkedStudent(null);
     }
-  }, [userData]);
+  }, [userData?.id, userData?.role, userData?.studentPhone]);
 
   // Re-fetch transactions on tab change or user data / linked student change
   useEffect(() => {
     if (activeTab === 'wallet' && userData?.id) {
       fetchTransactions();
     }
-  }, [activeTab, userData, linkedStudent]);
+  }, [activeTab, userData?.id, linkedStudent?.id]);
 
   const handleActivate = async (e: React.FormEvent, customCode?: string) => {
     if (e) e.preventDefault();
@@ -1034,9 +1267,21 @@ export default function Dashboard() {
     if (!codeToUse || !userData?.id) return;
 
     setActivationStatus('idle');
+    setIsActivating(true);
     try {
+      const isParent = userData.role === 'parent';
+      const targetUser = isParent ? linkedStudent : userData;
+
+      if (isParent && !linkedStudent) {
+        toast.error('يرجى ربط حساب الطالب أولاً لتتمكن من الشحن له');
+        setIsActivating(false);
+        return;
+      }
+
       // Determine charge amount based on the code entered
       let amount = 0;
+      let dbCodeDocRef: any = null;
+
       if (codeToUse === 'TF-1234-5678-9012') {
         amount = 150;
       } else if (codeToUse === 'TF-100-2026') {
@@ -1046,12 +1291,31 @@ export default function Dashboard() {
       } else if (codeToUse === 'TF-500-2026') {
         amount = 500;
       } else {
-        // Support any generic code pattern TF-[amount]-XXXX where amount is a number
-        const parts = codeToUse.split('-');
-        if (parts.length >= 2 && parts[0] === 'TF') {
-          const parsedVal = Number(parts[1]);
-          if (!isNaN(parsedVal) && parsedVal > 0 && parsedVal <= 1000) {
-            amount = parsedVal;
+        // Check in firebase recharge_codes
+        const codeDocRef = doc(db, 'recharge_codes', codeToUse);
+        const codeDocSnap = await getDoc(codeDocRef);
+        if (codeDocSnap.exists()) {
+          const codeData = codeDocSnap.data();
+          if (codeData.used) {
+            setActivationStatus('error');
+            toast.error('هذا الكود مستخدم بالفعل من قبل!');
+            return;
+          }
+          if (codeData.generatedForId && targetUser && codeData.generatedForId !== targetUser.id) {
+            setActivationStatus('error');
+            toast.error('عذراً، هذا الكود تم توليده لطالب محدد آخر ولا يمكن استخدامه لهذا الحساب!');
+            return;
+          }
+          amount = Number(codeData.amount);
+          dbCodeDocRef = codeDocRef;
+        } else {
+          // Backward compatibility check for other legacy formats: TF-[amount]-XXXX as fallback
+          const parts = codeToUse.split('-');
+          if (parts.length >= 2 && parts[0] === 'TF') {
+            const parsedVal = Number(parts[1]);
+            if (!isNaN(parsedVal) && parsedVal > 0 && parsedVal <= 1000) {
+              amount = parsedVal;
+            }
           }
         }
       }
@@ -1062,11 +1326,8 @@ export default function Dashboard() {
         return;
       }
 
-      const isParent = userData.role === 'parent';
-      const targetUser = isParent ? linkedStudent : userData;
-
-      if (isParent && !linkedStudent) {
-        toast.error('يرجى ربط حساب الطالب أولاً لتتمكن من الشحن له');
+      if (!targetUser) {
+        toast.error('لم يتم تحديد حساب الطالب المستهدف');
         return;
       }
 
@@ -1092,6 +1353,16 @@ export default function Dashboard() {
       await updateDoc(targetRef, {
         balance: newBalance
       });
+
+      // Mark the database code as used if applicable
+      if (dbCodeDocRef) {
+        await updateDoc(dbCodeDocRef, {
+          used: true,
+          usedBy: targetUser.id,
+          usedByName: targetUser.name || '',
+          usedAt: new Date().toISOString()
+        });
+      }
 
       // Record transaction
       await addDoc(collection(db, "transactions"), {
@@ -1121,6 +1392,8 @@ export default function Dashboard() {
       console.error("Error activating code:", err);
       setActivationStatus('error');
       toast.error('حدث خطأ أثناء الشحن، يرجى المحاولة لاحقاً');
+    } finally {
+      setIsActivating(false);
     }
   };
 
@@ -1264,7 +1537,7 @@ export default function Dashboard() {
       console.error("Error subscribing to notifications:", error);
     });
     return () => unsubscribe();
-  }, [userData]);
+  }, [userData?.id]);
 
   const markNotificationAsRead = async (id: string) => {
     try {
@@ -1364,6 +1637,18 @@ export default function Dashboard() {
     );
   }
 
+  const studentVisibleQuizzes = quizzesList.filter(quiz => {
+    if (userData?.role !== 'student') return true;
+    if (quiz.isHidden === true) return false;
+    if (quiz.targetedType === 'grade' && quiz.targetedGrade !== userData.grade) {
+      return false;
+    }
+    if (quiz.targetedType === 'custom' && (!Array.isArray(quiz.targetedStudentIds) || !quiz.targetedStudentIds.includes(userData.id))) {
+      return false;
+    }
+    return true;
+  });
+
   return (
     <div className="h-screen bg-gray-50 dark:bg-[#0D0D12] text-gray-900 dark:text-white flex flex-col md:flex-row font-sans selection:bg-primary/30 overflow-hidden">
       
@@ -1380,6 +1665,8 @@ export default function Dashboard() {
           {(userData?.role === 'admin' ? [
             { id: 'home', label: 'الرئيسية', icon: Target },
             { id: 'admin', label: 'لوحة الإدارة', icon: Shield },
+            { id: 'admin_recharge', label: 'شحن الرصيد', icon: Ticket },
+            { id: 'admin_courses', label: 'الكورسات', icon: BookOpen },
             { id: 'analytics', label: 'التقارير والإحصائيات', icon: Flame },
             { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
           ] : userData?.role === 'teacher' ? [
@@ -1389,7 +1676,6 @@ export default function Dashboard() {
             { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
             { id: 'live', label: 'حصص لايف', icon: Video },
             { id: 'analytics', label: 'التقارير', icon: Flame },
-            { id: 'wallet', label: 'المحفظة', icon: Ticket },
             { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
           ] : userData?.role === 'parent' ? [
             { id: 'home', label: 'الرئيسية', icon: Target },
@@ -1456,9 +1742,32 @@ export default function Dashboard() {
               </p>
            </div>
            <div className="flex items-center gap-4">
-              <div className={`hidden md:flex items-center gap-2 bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 text-[#00B4D8] dark:text-[#D4AF37] px-4 py-2 rounded-full font-bold text-sm ${userData?.role === 'teacher' || userData?.role === 'admin' ? '!hidden' : ''}`}>
-                 <Star className="w-4 h-4 fill-[#00B4D8] dark:fill-[#D4AF37]" /> {loadingStars ? '...' : starsCount.toLocaleString('ar-EG')}
-              </div>
+              {userData?.role === 'student' && (
+                <div 
+                  onClick={() => setActiveTab('wallet')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setActiveTab('wallet');
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`محفظتي التعليمية، الرصيد الحالي هو ${userData?.balance ?? 0} جنيه مصري. اضغط أو اضغط مسافة للذهاب للمحفظة`}
+                  className="flex items-center gap-2 bg-gradient-to-r from-[#00B4D8]/10 to-[#0077B6]/10 dark:from-[#D4AF37]/10 dark:to-[#B8860B]/10 hover:from-[#00B4D8]/20 hover:to-[#0077B6]/20 dark:hover:from-[#D4AF37]/20 dark:hover:to-[#B8860B]/20 border border-[#00B4D8]/20 dark:border-[#D4AF37]/20 px-3.5 py-1.5 rounded-2xl cursor-pointer transition-all duration-200 active:scale-95 shadow-sm group ml-2 focus:outline-none focus:ring-2 focus:ring-[#00B4D8] dark:focus:ring-[#D4AF37]"
+                  title="محفظتي التعليمية - اضغط للذهاب للمحفظة"
+                >
+                  <div className="w-7 h-7 rounded-xl bg-[#00B4D8]/20 dark:bg-[#D4AF37]/20 flex items-center justify-center text-[#00B4D8] dark:text-[#D4AF37] group-hover:scale-110 transition-transform">
+                    <Wallet className="w-4 h-4" />
+                  </div>
+                  <div className="flex flex-col items-start leading-none">
+                    <span className="text-[10px] font-black text-gray-400 dark:text-slate-500 block">المحفظة</span>
+                    <span className="text-xs font-black text-[#0077B6] dark:text-[#D4AF37] mt-0.5">
+                      {userData?.balance ?? 0} ج.م
+                    </span>
+                  </div>
+                </div>
+              )}
               <ThemeToggle />
               <button 
                 onClick={handleLogout}
@@ -1533,7 +1842,13 @@ export default function Dashboard() {
         <div className="p-6 md:p-8 flex-1 pb-24 md:pb-8">
           <AnimatePresence mode="wait">
             {activeTab === 'admin' && userData?.role === 'admin' && (
-              <AdminPanel />
+              <AdminPanel userData={userData} />
+            )}
+            {activeTab === 'admin_recharge' && userData?.role === 'admin' && (
+              <AdminPanel initialTab="wallet" userData={userData} />
+            )}
+            {activeTab === 'admin_courses' && userData?.role === 'admin' && (
+              <AdminCoursesPanel />
             )}
             {activeTab === 'home' && userData?.role === 'admin' && (
               <div className="space-y-6">
@@ -1559,11 +1874,10 @@ export default function Dashboard() {
                 {userData?.role === 'teacher' && (
                   <div className="space-y-8">
                     {/* Stat Cards */}
-                    <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {[
                         { id: 1, title: 'إجمالي الطلاب', value: loadingTeacherStats ? '...' : teacherStudentsCount.toLocaleString('ar-EG'), icon: Users, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
                         { id: 2, title: 'إجمالي المشاهدات', value: loadingTeacherStats ? '...' : teacherViewsCount.toLocaleString('ar-EG'), icon: Activity, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-900/20' },
-                        { id: 3, title: 'الرصيد المتاح', value: `${(userData?.balance || 0).toLocaleString('ar-EG')} ج.م`, icon: Ticket, color: 'text-yellow-500', bg: 'bg-yellow-50 dark:bg-yellow-900/20' },
                       ].map((stat) => (
                         <div key={stat.id} className="bg-white dark:bg-[#1A1A24] rounded-3xl p-5 border border-gray-200 dark:border-[#2D2D3D] shadow-sm flex items-center gap-4 h-full">
                           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${stat.bg}`}>
@@ -1964,274 +2278,84 @@ export default function Dashboard() {
                 {/* Balance Card */}
                 <div className="bg-gradient-to-br from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#B8860B] rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-                  <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Wallet className="w-5 h-5 text-white/80" />
-                        <span className="text-white/80 font-bold text-sm">
-                          {userData?.role === 'parent' ? `محفظة الطالب: ${linkedStudent?.name || 'غير مرتبط'}` : 'الرصيد الحالي بالمحفظة'}
-                        </span>
-                      </div>
-                      <h2 className="text-4xl font-black flex items-baseline gap-2">
-                        {userData?.role === 'parent' 
-                          ? (linkedStudent ? (linkedStudent.balance || 0).toLocaleString('ar-EG') : '0')
-                          : (userData?.balance || 0).toLocaleString('ar-EG')
-                        }
-                        <span className="text-lg font-bold text-white/90">ج.م</span>
-                      </h2>
-                      {userData?.role === 'parent' && !linkedStudent && (
-                        <p className="text-xs text-red-100 font-bold bg-red-500/20 px-3 py-1 rounded-lg inline-block mt-2">
-                          ⚠️ يرجى ربط حساب الطالب من صفحة الحساب الشخصي أولاً
-                        </p>
-                      )}
+                  <div className="relative z-10">
+                    <p className="text-white/80 font-bold text-sm">الرصيد الحالي</p>
+                    <h2 className="text-4xl font-black mt-2">
+                      {(userData?.balance || 0).toLocaleString('ar-EG')}
+                      <span className="text-lg font-bold ml-2">ج.م</span>
+                    </h2>
+                  </div>
+                </div>
+
+                {/* Recharge Code / Card Form Card */}
+                <div className="bg-white dark:bg-[#1A1A24] rounded-3xl p-8 border border-gray-200 dark:border-[#2D2D3D] shadow-sm space-y-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 flex items-center justify-center text-[#00B4D8] dark:text-[#D4AF37]">
+                      <Ticket className="w-5 h-5" />
+                    </div>
+                    <div className="text-right">
+                      <h3 className="text-lg font-black text-gray-900 dark:text-white">شحن الرصيد باستخدام كود أو كارت شحن</h3>
+                      <p className="text-gray-400 dark:text-gray-500 font-bold text-xs mt-0.5">أدخل الكود الخاص بك لتعبئة رصيد محفظتك مباشرة</p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleActivate} className="space-y-4">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={code}
+                        onChange={(e) => setCode(e.target.value)}
+                        placeholder="أدخل كود الشحن هنا (مثال: TF-100-2026)"
+                        className="w-full text-right md:text-center tracking-wider placeholder:tracking-normal p-4 rounded-2xl border border-gray-200 dark:border-[#2D2D3D] bg-gray-50 dark:bg-[#15151F] text-gray-900 dark:text-white text-base font-black focus:outline-none focus:ring-2 focus:ring-[#00B4D8] dark:focus:ring-[#D4AF37] transition-all"
+                        disabled={isActivating}
+                      />
                     </div>
 
-                    <div className="flex flex-wrap gap-3">
-                      {(userData?.role === 'student' || (userData?.role === 'parent' && linkedStudent)) && (
-                        <button 
-                          onClick={() => setShowChargeForm(!showChargeForm)} 
-                          className="bg-white text-[#00B4D8] dark:text-[#D4AF37] px-6 py-3 rounded-2xl font-black text-sm hover:bg-gray-50 transition-all flex items-center gap-2 shadow-md hover:scale-[1.02] active:scale-[0.98]"
-                        >
-                          <Ticket className="w-4 h-4" />
-                          {showChargeForm ? 'إلغاء الشحن' : 'شحن الرصيد بالكارت'}
-                        </button>
+                    <button
+                      type="submit"
+                      disabled={isActivating || !code.trim()}
+                      className="w-full bg-[#00B4D8] hover:bg-[#0077B6] dark:bg-[#D4AF37] dark:hover:bg-[#B8860B] disabled:opacity-50 text-white font-black py-4 rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+                    >
+                      {isActivating ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          <span>جاري الشحن وتفعيل الكود...</span>
+                        </>
+                      ) : (
+                        <span>تفعيل وشحن الكود الآن</span>
                       )}
-                      {userData?.role === 'teacher' && (
-                        <button 
-                          onClick={() => setShowPayoutForm(!showPayoutForm)}
-                          className="bg-white text-[#00B4D8] dark:text-[#D4AF37] px-6 py-3 rounded-2xl font-black text-sm hover:bg-gray-50 transition-all flex items-center gap-2 shadow-md hover:scale-[1.02] active:scale-[0.98]"
-                        >
-                          <DollarSign className="w-4 h-4" />
-                          {showPayoutForm ? 'إلغاء الطلب' : 'طلب سحب الأرباح'}
-                        </button>
-                      )}
+                    </button>
+                  </form>
+
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex gap-3 items-start text-right" dir="rtl">
+                    <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-600 dark:text-amber-400 font-bold leading-relaxed">
+                      <p className="font-black mb-1">تعليمات وتنبيهات هامة:</p>
+                      <ul className="list-disc list-inside space-y-1">
+                        <li>تأكد من كتابة الكود بشكل صحيح وبنفس الحروف الكبيرة وعلامات الفاصلة (-).</li>
+                        <li>الكود صالح للاستخدام مرة واحدة فقط وسيتم ربطه بحسابك فوراً.</li>
+                        <li>إذا تم توليد الكود لطالب محدد، فلن يتمكن أي حساب آخر من استخدامه.</li>
+                      </ul>
                     </div>
                   </div>
                 </div>
 
-                {/* Interactive Charge Form */}
-                {showChargeForm && (
-                  <motion.div 
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="bg-white dark:bg-[#1A1A24] rounded-3xl p-6 md:p-8 border border-gray-200 dark:border-[#2D2D3D] shadow-sm space-y-6"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 rounded-xl flex items-center justify-center">
-                        <Sparkles className="w-5 h-5 text-[#00B4D8] dark:text-[#D4AF37]" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-black text-gray-900 dark:text-white">شحن كارت Teachland التعليمي</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">أدخل كود الكارت التعليمي المكون من 12 رقماً لشحن المحفظة فوراً</p>
-                      </div>
-                    </div>
-
-                    <form onSubmit={handleActivate} className="max-w-md mx-auto space-y-4">
-                      <div className="relative">
-                        <input
-                          required
-                          type="text"
-                          value={code}
-                          onChange={(e) => setCode(e.target.value.toUpperCase())}
-                          placeholder="TF-XXXX-XXXX"
-                          className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] rounded-2xl px-6 py-4 text-center text-xl md:text-2xl tracking-[0.15em] font-mono text-gray-900 dark:text-white outline-none transition-all uppercase"
-                          dir="ltr"
-                        />
-                      </div>
-                      <button 
-                        type="submit" 
-                        disabled={activationStatus === 'idle' && code.length > 0}
-                        className="w-full bg-[#00B4D8] dark:bg-[#D4AF37] text-white font-black py-4 rounded-2xl shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:hover:bg-[#B8860B] dark:hover:bg-[#B8860B] transition-all text-base flex items-center justify-center gap-2 active:scale-[0.99]"
-                      >
-                        <CheckCircle className="w-5 h-5" />
-                        تفعيل الكارت وشحن المحفظة
-                      </button>
-                    </form>
-
-                    {/* Test Codes for Sandbox Experience */}
-                    <div className="bg-[#00B4D8]/5 dark:bg-[#D4AF37]/5 border border-[#00B4D8]/20 dark:border-[#D4AF37]/20 rounded-2xl p-4 md:p-6 space-y-3">
-                      <h4 className="text-sm font-black text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37]" />
-                        أكواد شحن تجريبية (تفاعلية للتجربة والتقييم):
-                      </h4>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        يمكنك نسخ أي كود من الأكواد التالية وتفعيله لتجربة الشحن الفوري وزيادة رصيد المحفظة بالكامل:
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                        {[
-                          { code: 'TF-100-2026', label: 'كارت شحن بقيمة ١٠٠ ج.م' },
-                          { code: 'TF-200-2026', label: 'كارت شحن بقيمة ٢٠٠ ج.م' },
-                          { code: 'TF-500-2026', label: 'كارت شحن بقيمة ٥٠٠ ج.م' }
-                        ].map(tc => (
-                          <button
-                            key={tc.code}
-                            type="button"
-                            onClick={(e) => handleActivate(e, tc.code)}
-                            className="bg-white dark:bg-[#222230] hover:bg-gray-50 dark:hover:bg-[#2A2A3C] border border-gray-200 dark:border-[#3D3D52] p-3 rounded-xl transition-all text-right group flex flex-col justify-between"
-                          >
-                            <span className="text-[10px] text-gray-400 dark:text-gray-500 font-bold">{tc.label}</span>
-                            <span className="text-xs font-mono font-black text-[#00B4D8] dark:text-[#D4AF37] select-all mt-1">{tc.code}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Interactive Teacher Payout Form */}
-                {showPayoutForm && (
-                  <motion.div 
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="bg-white dark:bg-[#1A1A24] rounded-3xl p-6 md:p-8 border border-gray-200 dark:border-[#2D2D3D] shadow-sm space-y-6"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 rounded-xl flex items-center justify-center">
-                        <PiggyBank className="w-5 h-5 text-[#00B4D8] dark:text-[#D4AF37]" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-black text-gray-900 dark:text-white">طلب سحب الأرباح</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">قم بتحويل أرباحك ومستحقاتك إلى حسابك المالي أو محفظتك الإلكترونية</p>
-                      </div>
-                    </div>
-
-                    <form onSubmit={handlePayoutSubmit} className="space-y-4 max-w-xl mx-auto">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-500 dark:text-gray-400">مبلغ السحب (ج.م)</label>
-                          <input
-                            required
-                            type="number"
-                            min="1"
-                            max={userData?.balance || 0}
-                            value={payoutAmount}
-                            onChange={(e) => setPayoutAmount(e.target.value)}
-                            placeholder="مثال: 500"
-                            className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none transition-colors"
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-xs font-black text-gray-500 dark:text-gray-400">طريقة السحب المتاحة</label>
-                          <select
-                            value={payoutMethod}
-                            onChange={(e) => setPayoutMethod(e.target.value as any)}
-                            className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none transition-colors"
-                          >
-                            <option value="vodafone">فودافون كاش / محفظة الهاتف</option>
-                            <option value="instapay">تطبيق إنستاباي (InstaPay)</option>
-                            <option value="bank">تحويل بنكي / حساب جاري</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-xs font-black text-gray-500 dark:text-gray-400">
-                          {payoutMethod === 'vodafone' ? 'رقم محفظة فودافون كاش (١١ رقماً)' : 
-                           payoutMethod === 'instapay' ? 'عنوان الدفع إنستاباي الخاص بك (e.g., name@instapay)' : 
-                           'رقم الحساب البنكي / الآيبان (IBAN) واسم البنك'}
-                        </label>
-                        <input
-                          required
-                          type="text"
-                          value={payoutDetails}
-                          onChange={(e) => setPayoutDetails(e.target.value)}
-                          placeholder={payoutMethod === 'vodafone' ? '010XXXXXXXX' : payoutMethod === 'instapay' ? 'username@instapay' : 'EG03000XXXXXXXX'}
-                          className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none transition-colors"
-                        />
-                      </div>
-
-                      <button 
-                        type="submit" 
-                        disabled={isSubmittingPayout}
-                        className="w-full bg-[#00B4D8] dark:bg-[#D4AF37] text-white font-black py-4 rounded-xl shadow-lg hover:scale-[1.01] transition-all text-sm flex items-center justify-center gap-2"
-                      >
-                        {isSubmittingPayout ? (
-                          <>
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                            جاري إرسال الطلب...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4" />
-                            تقديم طلب السحب المالي
-                          </>
-                        )}
-                      </button>
-                    </form>
-                  </motion.div>
-                )}
-
                 {/* Transaction Logs */}
                 <div className="bg-white dark:bg-[#1A1A24] rounded-3xl p-8 border border-gray-200 dark:border-[#2D2D3D] shadow-sm space-y-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
-                      <History className="w-5 h-5 text-gray-400" />
-                      سجل المعاملات بالمحفظة
-                    </h3>
-                    <span className="text-xs bg-gray-100 dark:bg-[#222230] text-gray-500 dark:text-gray-400 px-3 py-1.5 rounded-full font-bold">
-                      {transactions.length} معاملة
-                    </span>
-                  </div>
-
-                  {loadingTransactions ? (
-                    <div className="text-center py-12 flex flex-col items-center justify-center gap-3">
-                      <Loader2 className="w-8 h-8 text-[#00B4D8] dark:text-[#D4AF37] animate-spin" />
-                      <p className="text-xs text-gray-500 dark:text-gray-400 font-bold">جاري تحميل المعاملات والعمليات...</p>
-                    </div>
-                  ) : transactions.length > 0 ? (
+                  <h3 className="text-lg font-black text-gray-900 dark:text-white">سجل المعاملات</h3>
+                  {transactions.length > 0 ? (
                     <div className="divide-y divide-gray-100 dark:divide-[#2D2D3D]/50">
-                      {transactions.map((tx) => {
-                        const isCredit = tx.amount > 0;
-                        return (
-                          <div key={tx.id} className="py-4 flex items-center justify-between gap-4 first:pt-0 last:pb-0">
-                            <div className="flex items-center gap-3.5">
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                                isCredit 
-                                  ? 'bg-green-50 dark:bg-green-500/10 text-green-500' 
-                                  : 'bg-red-50 dark:bg-red-500/10 text-red-500'
-                              }`}>
-                                {isCredit ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
-                              </div>
-                              <div className="text-right">
-                                <h4 className="text-sm font-black text-gray-900 dark:text-white mb-0.5">{tx.description}</h4>
-                                <div className="flex items-center gap-2 text-[10px] text-gray-400 dark:text-gray-500 font-bold">
-                                  <span>{new Date(tx.createdAt).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' })}</span>
-                                  {tx.status && (
-                                    <>
-                                      <span>•</span>
-                                      <span className={`px-1.5 py-0.5 rounded ${
-                                        tx.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400' :
-                                        tx.status === 'pending' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-400' :
-                                        'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400'
-                                      }`}>
-                                        {tx.status === 'completed' ? 'مكتمل' : tx.status === 'pending' ? 'قيد الانتظار' : 'مرفوض'}
-                                      </span>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            <span className={`text-base font-black ${isCredit ? 'text-green-500' : 'text-red-500'}`} dir="ltr">
-                              {isCredit ? '+' : ''}{tx.amount.toLocaleString('ar-EG')} ج.م
-                            </span>
-                          </div>
-                        );
-                      })}
+                      {transactions.map((tx) => (
+                        <div key={tx.id} className="py-4 flex justify-between items-center">
+                          <span className="text-gray-900 dark:text-white font-bold">{tx.description}</span>
+                          <span className={`${tx.amount > 0 ? 'text-green-500' : 'text-red-500'} font-black`}>
+                            {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('ar-EG')} ج.م
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   ) : (
-                    <div className="text-center py-12 text-gray-500 dark:text-gray-400 flex flex-col items-center justify-center gap-4">
-                      <div className="w-16 h-16 bg-gray-50 dark:bg-[#0D0D12] rounded-2xl flex items-center justify-center">
-                        <History className="w-8 h-8 text-gray-300 dark:text-gray-600" />
-                      </div>
-                      <div>
-                        <p className="font-black text-sm text-gray-700 dark:text-gray-300">سجل المعاملات فارغ</p>
-                        <p className="text-xs text-gray-400 mt-1">لم تقم بأي عمليات دفع، شراء أو شحن في الفترة السابقة.</p>
-                      </div>
-                    </div>
+                    <p className="text-gray-500 text-center py-4">لا توجد معاملات</p>
                   )}
                 </div>
               </motion.div>
@@ -2272,277 +2396,187 @@ export default function Dashboard() {
                   <>
                     {userData?.role === 'student' && (
                       <div className="space-y-6 text-right">
-                        {/* Sub-tabs selector */}
-                        <div className="flex gap-4 border-b border-gray-100 dark:border-[#2D2D3D] pb-3 mb-6">
-                          <button
-                            onClick={() => setQuizTabType('lesson')}
-                            className={`pb-2 text-sm font-black transition-all relative ${
-                              quizTabType === 'lesson'
-                                ? 'text-[#00B4D8] dark:text-[#D4AF37]'
-                                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                            }`}
-                          >
-                            اختبارات الحصص والدروس
-                            {quizTabType === 'lesson' && (
-                              <motion.div layoutId="studentQuizTabBorder" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
-                            )}
-                          </button>
-                          <button
-                            onClick={() => setQuizTabType('comprehensive')}
-                            className={`pb-2 text-sm font-black transition-all relative ${
-                              quizTabType === 'comprehensive'
-                                ? 'text-[#00B4D8] dark:text-[#D4AF37]'
-                                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                            }`}
-                          >
-                            الامتحانات الشاملة والعامة 🏆
-                            {quizTabType === 'comprehensive' && (
-                              <motion.div layoutId="studentQuizTabBorder" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
-                            )}
-                          </button>
-                        </div>
-
-                        {quizTabType === 'lesson' ? (
-                          <>
-                            {/* Metrics */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                              <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-5 border border-gray-200 dark:border-[#2D2D3D] shadow-sm">
-                                <p className="text-xs font-bold text-gray-500 mb-1">الاختبارات المكتملة</p>
-                                <h3 className="text-2xl font-black text-[#00B4D8] dark:text-[#D4AF37]">
-                                  {submissionsList.filter(s => s.lessonId !== 'comprehensive').length.toLocaleString('ar-EG')} / {quizzesList.filter(q => !q.isComprehensive).length.toLocaleString('ar-EG')}
-                                </h3>
-                              </div>
-                              <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-5 border border-gray-200 dark:border-[#2D2D3D] shadow-sm">
-                                <p className="text-xs font-bold text-gray-500 mb-1">متوسط الدرجات</p>
-                                <h3 className="text-2xl font-black text-green-500">
-                                  {submissionsList.filter(s => s.lessonId !== 'comprehensive').length > 0 
-                                    ? `${Math.round(submissionsList.filter(s => s.lessonId !== 'comprehensive').reduce((acc, curr) => acc + (curr.score || 0), 0) / submissionsList.filter(s => s.lessonId !== 'comprehensive').length).toLocaleString('ar-EG')}%`
-                                    : '0%'
-                                  }
-                                </h3>
-                              </div>
-                              <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-5 border border-gray-200 dark:border-[#2D2D3D] shadow-sm">
-                                <p className="text-xs font-bold text-gray-500 mb-1">الأخطاء المصححة</p>
-                                <h3 className="text-2xl font-black text-purple-500">
-                                  {submissionsList.filter(s => s.lessonId !== 'comprehensive').reduce((acc, curr) => acc + ((curr.totalQuestions || 0) - (curr.correctAnswers || 0)), 0).toLocaleString('ar-EG')} خطأ
-                                </h3>
-                              </div>
+                        {/* Compact Header Summary Card */}
+                        <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-4 border border-gray-150 dark:border-[#2D2D3D]/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                          <div className="space-y-1">
+                            <h3 className="text-sm font-black text-gray-800 dark:text-white">ملخص أدائك وتقييمك 📊</h3>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 font-bold">تابع إحصائياتك للاختبارات التفاعلية والامتحانات الشاملة الموجهة لك.</p>
+                          </div>
+                          <div className="flex gap-4 self-stretch sm:self-auto justify-between sm:justify-start">
+                            <div className="bg-gray-50 dark:bg-[#0D0D12] border border-gray-100 dark:border-[#2D2D3D]/40 rounded-xl px-4 py-2 text-center shrink-0">
+                              <span className="block text-[9px] text-gray-400 font-bold mb-0.5">المنجزة</span>
+                              <span className="text-sm font-black text-[#00B4D8] dark:text-[#D4AF37]">
+                                {submissionsList.length} / {studentVisibleQuizzes.length}
+                              </span>
                             </div>
-
-                            {/* Filters */}
-                            <div className="flex gap-2 bg-gray-100 dark:bg-[#0D0D12] p-1.5 rounded-xl w-fit">
-                              {[
-                                { id: 'all', label: 'الكل' },
-                                { id: 'completed', label: 'المكتملة' },
-                                { id: 'pending', label: 'المتبقية' }
-                              ].map(filter => (
-                                <button
-                                  key={filter.id}
-                                  onClick={() => setQuizzesFilter(filter.id as any)}
-                                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                                    quizzesFilter === filter.id
-                                      ? 'bg-white dark:bg-[#1A1A24] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm'
-                                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-                                  }`}
-                                >
-                                  {filter.label}
-                                </button>
-                              ))}
-                            </div>
-
-                            {/* Quizzes List */}
-                            <div className="space-y-4">
-                              {quizzesList
-                                .filter(q => !q.isComprehensive)
-                                .filter(q => {
-                                  const isSolved = submissionsList.some(s => s.quizId === q.id);
-                                  if (quizzesFilter === 'completed') return isSolved;
-                                  if (quizzesFilter === 'pending') return !isSolved;
-                                  return true;
-                                })
-                                .map(quiz => {
-                                  const sub = submissionsList.find(s => s.quizId === quiz.id);
-                                  return (
-                                    <div key={quiz.id} className="bg-white dark:bg-[#1A1A24] rounded-3xl p-6 border border-gray-200 dark:border-[#2D2D3D] shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-md transition-shadow">
-                                      <div className="flex-1 space-y-2">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs font-bold bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] px-2.5 py-1 rounded-lg">
-                                            الوقت: {quiz.timeLimit} دقيقة
-                                          </span>
-                                          <span className="text-xs font-bold bg-gray-100 dark:bg-[#222230] text-gray-500 px-2.5 py-1 rounded-lg">
-                                            الأسئلة: {quiz.questions?.length || 0} أسئلة
-                                          </span>
-                                        </div>
-                                        <h3 className="text-lg font-black text-gray-900 dark:text-white">{quiz.title}</h3>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{quiz.description}</p>
-                                      </div>
-
-                                      <div className="shrink-0 flex items-center gap-4">
-                                        {sub ? (
-                                          <div className="flex flex-col md:flex-row items-center gap-4">
-                                            <div className="text-center md:text-left">
-                                              <div className={`text-sm font-black ${sub.score >= 50 ? 'text-green-500' : 'text-red-500'}`}>
-                                                {sub.score}% {sub.score >= 50 ? '• ناجح 🎉' : '• راسب ⚠️'}
-                                              </div>
-                                              <div className="text-xs text-gray-400 font-bold mt-0.5" dir="ltr">
-                                                {sub.correctAnswers} / {sub.totalQuestions} صحيح
-                                              </div>
-                                            </div>
-                                            <button
-                                              onClick={() => {
-                                                setSelectedQuizReview(quiz);
-                                                setSelectedSubmissionReview(sub);
-                                              }}
-                                              className="px-5 py-3 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 dark:hover:bg-[#D4AF37]/20 rounded-2xl font-bold text-xs transition-colors flex items-center gap-2"
-                                            >
-                                              <Award className="w-4 h-4" />
-                                              تصحيح الأخطاء والتقرير
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <button
-                                            onClick={() => {
-                                              navigate(`/course/${quiz.courseId}`);
-                                              toast.success('تم توجيهك لصفحة الكورس، الرجاء اختيار الدرس وبدء الاختبار من تبويب الاختبار التفاعلي.');
-                                            }}
-                                            className="px-6 py-3 bg-[#00B4D8] dark:bg-[#D4AF37] text-white hover:bg-[#0077B6] dark:hover:bg-[#B8860B] rounded-2xl font-bold text-xs shadow-md transition-all flex items-center gap-2 hover:-translate-y-0.5"
-                                          >
-                                            <Play className="w-4 h-4" />
-                                            ابدأ الاختبار الآن
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-
-                              {quizzesList.filter(q => !q.isComprehensive).filter(q => {
-                                const isSolved = submissionsList.some(s => s.quizId === q.id);
-                                if (quizzesFilter === 'completed') return isSolved;
-                                if (quizzesFilter === 'pending') return !isSolved;
-                                return true;
-                              }).length === 0 && (
-                                <div className="text-center py-16 bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] rounded-3xl">
-                                  <Trophy className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-                                  <p className="font-bold text-gray-700 dark:text-gray-300">لا توجد اختبارات حصص في هذا القسم حالياً 👍</p>
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        ) : (
-                          // Comprehensive exams tab for students
-                          <div className="space-y-6">
-                            {/* Metrics */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                              <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-5 border border-gray-200 dark:border-[#2D2D3D] shadow-sm">
-                                <p className="text-xs font-bold text-gray-500 mb-1">الامتحانات الشاملة المكتملة</p>
-                                <h3 className="text-2xl font-black text-[#00B4D8] dark:text-[#D4AF37]">
-                                  {submissionsList.filter(s => s.lessonId === 'comprehensive').length.toLocaleString('ar-EG')} / {quizzesList.filter(q => q.isComprehensive).length.toLocaleString('ar-EG')}
-                                </h3>
-                              </div>
-                              <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-5 border border-gray-200 dark:border-[#2D2D3D] shadow-sm">
-                                <p className="text-xs font-bold text-gray-500 mb-1">متوسط درجات الشامل</p>
-                                <h3 className="text-2xl font-black text-green-500">
-                                  {submissionsList.filter(s => s.lessonId === 'comprehensive').length > 0 
-                                    ? `${Math.round(submissionsList.filter(s => s.lessonId === 'comprehensive').reduce((acc, curr) => acc + (curr.score || 0), 0) / submissionsList.filter(s => s.lessonId === 'comprehensive').length).toLocaleString('ar-EG')}%`
-                                    : '0%'
-                                  }
-                                </h3>
-                              </div>
-                              <div className="bg-white dark:bg-[#1A1A24] rounded-2xl p-5 border border-gray-200 dark:border-[#2D2D3D] shadow-sm">
-                                <p className="text-xs font-bold text-gray-500 mb-1">نسبة النجاح العامة</p>
-                                <h3 className="text-2xl font-black text-purple-500">
-                                  {submissionsList.filter(s => s.lessonId === 'comprehensive').length > 0
-                                    ? `${Math.round((submissionsList.filter(s => s.lessonId === 'comprehensive' && s.passed).length / submissionsList.filter(s => s.lessonId === 'comprehensive').length) * 100).toLocaleString('ar-EG')}%`
-                                    : '0%'
-                                  }
-                                </h3>
-                              </div>
-                            </div>
-
-                            {/* Comprehensive Quizzes List */}
-                            <div className="space-y-4">
-                              {quizzesList
-                                .filter(q => q.isComprehensive)
-                                .map(quiz => {
-                                  const sub = submissionsList.find(s => s.quizId === quiz.id);
-                                  const courseInfo = coursesList.find(c => c.id === quiz.courseId);
-                                  return (
-                                    <div key={quiz.id} className="bg-gradient-to-l from-white to-gray-50/50 dark:from-[#1A1A24] dark:to-[#14141d] rounded-3xl p-6 border border-gray-200 dark:border-[#2D2D3D] shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 hover:shadow-md transition-shadow relative overflow-hidden">
-                                      <div className="absolute top-0 right-0 w-1.5 h-full bg-[#00B4D8] dark:bg-[#D4AF37]" />
-                                      <div className="flex-1 space-y-2">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                          <span className="text-xs font-bold bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] px-2.5 py-1 rounded-lg flex items-center gap-1">
-                                            <Clock className="w-3.5 h-3.5" />
-                                            الوقت: {quiz.timeLimit} دقيقة
-                                          </span>
-                                          <span className="text-xs font-bold bg-gray-100 dark:bg-[#222230] text-gray-500 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                                            <BookOpen className="w-3.5 h-3.5" />
-                                            الأسئلة: {quiz.questions?.length || 0} أسئلة
-                                          </span>
-                                          {courseInfo ? (
-                                            <span className="text-xs font-bold bg-[#00B4D8]/5 text-gray-600 dark:bg-[#D4AF37]/5 dark:text-gray-300 px-2.5 py-1 rounded-lg border border-[#00B4D8]/10 dark:border-[#D4AF37]/10">
-                                              الكورس: {courseInfo.title}
-                                            </span>
-                                          ) : (
-                                            <span className="text-xs font-bold bg-purple-50 text-purple-600 dark:bg-purple-950/30 dark:text-purple-400 px-2.5 py-1 rounded-lg border border-purple-100 dark:border-purple-900/30">
-                                              امتحان عام للجميع 🌍
-                                            </span>
-                                          )}
-                                        </div>
-                                        <h3 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
-                                          {quiz.title}
-                                        </h3>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{quiz.description}</p>
-                                      </div>
-
-                                      <div className="shrink-0 flex items-center gap-4">
-                                        {sub ? (
-                                          <div className="flex flex-col md:flex-row items-center gap-4">
-                                            <div className="text-center md:text-left">
-                                              <div className={`text-sm font-black ${sub.score >= 50 ? 'text-green-500' : 'text-red-500'}`}>
-                                                {sub.score}% {sub.score >= 50 ? '• ناجح 🎉' : '• راسب ⚠️'}
-                                              </div>
-                                              <div className="text-xs text-gray-400 font-bold mt-0.5" dir="ltr">
-                                                {sub.correctAnswers} / {sub.totalQuestions} صحيح
-                                              </div>
-                                            </div>
-                                            <button
-                                              onClick={() => {
-                                                setSelectedQuizReview(quiz);
-                                                setSelectedSubmissionReview(sub);
-                                              }}
-                                              className="px-5 py-3 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 dark:hover:bg-[#D4AF37]/20 rounded-2xl font-bold text-xs transition-colors flex items-center gap-2"
-                                            >
-                                              <Award className="w-4 h-4" />
-                                              تقرير الإجابات والأخطاء
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <button
-                                            onClick={() => {
-                                              navigate(`/exam/${quiz.id}`);
-                                            }}
-                                            className="px-6 py-3 bg-[#00B4D8] dark:bg-[#D4AF37] text-white hover:bg-[#0077B6] dark:hover:bg-[#B8860B] rounded-2xl font-bold text-xs shadow-md transition-all flex items-center gap-2 hover:-translate-y-0.5 animate-pulse"
-                                          >
-                                            <Play className="w-4 h-4" />
-                                            دخول وبدء الامتحان الشامل الآن
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-
-                              {quizzesList.filter(q => q.isComprehensive).length === 0 && (
-                                <div className="text-center py-16 bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] rounded-3xl">
-                                  <Trophy className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-                                  <p className="font-bold text-gray-700 dark:text-gray-300">لم يقم المعلم بنشر أي امتحانات شاملة أو عامة حتى الآن 👍</p>
-                                </div>
-                              )}
+                            <div className="bg-gray-50 dark:bg-[#0D0D12] border border-gray-100 dark:border-[#2D2D3D]/40 rounded-xl px-4 py-2 text-center shrink-0">
+                              <span className="block text-[9px] text-gray-400 font-bold mb-0.5">متوسط الدرجة</span>
+                              <span className="text-sm font-black text-green-500">
+                                {submissionsList.length > 0
+                                  ? `${Math.round(submissionsList.reduce((acc, curr) => acc + (curr.score || 0), 0) / submissionsList.length)}%`
+                                  : '0%'
+                                }
+                              </span>
                             </div>
                           </div>
-                        )}
+                        </div>
+
+                        {/* Beautifully Combined Control Bar (Tabs + Filters) */}
+                        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-b border-gray-150 dark:border-[#2D2D3D]/60 pb-3">
+                          {/* Inner Tabs Selector */}
+                          <div className="flex gap-4">
+                            <button
+                              onClick={() => setQuizTabType('lesson')}
+                              className={`pb-1 text-xs font-black transition-all relative ${
+                                quizTabType === 'lesson'
+                                  ? 'text-[#00B4D8] dark:text-[#D4AF37]'
+                                  : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                              }`}
+                            >
+                              اختبارات الدروس ({studentVisibleQuizzes.filter(q => !q.isComprehensive).length})
+                              {quizTabType === 'lesson' && (
+                                <motion.div layoutId="studentQuizTabBorder" className="absolute -bottom-[13px] left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => setQuizTabType('comprehensive')}
+                              className={`pb-1 text-xs font-black transition-all relative ${
+                                quizTabType === 'comprehensive'
+                                  ? 'text-[#00B4D8] dark:text-[#D4AF37]'
+                                  : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                              }`}
+                            >
+                              الامتحانات الشاملة والنشطة ({studentVisibleQuizzes.filter(q => q.isComprehensive).length})
+                              {quizTabType === 'comprehensive' && (
+                                <motion.div layoutId="studentQuizTabBorder" className="absolute -bottom-[13px] left-0 right-0 h-0.5 bg-[#00B4D8] dark:bg-[#D4AF37]" />
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Filters Chips */}
+                          <div className="flex gap-1.5 bg-gray-100 dark:bg-[#0D0D12] p-1 rounded-xl w-fit self-end md:self-auto">
+                            {[
+                              { id: 'all', label: 'الكل' },
+                              { id: 'completed', label: 'المكتملة' },
+                              { id: 'pending', label: 'المتبقية' }
+                            ].map(filter => (
+                              <button
+                                key={filter.id}
+                                onClick={() => setQuizzesFilter(filter.id as any)}
+                                className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${
+                                  quizzesFilter === filter.id
+                                    ? 'bg-white dark:bg-[#1A1A24] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm'
+                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                }`}
+                              >
+                                {filter.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* List rendering */}
+                        <div className="space-y-3">
+                          {studentVisibleQuizzes
+                            .filter(q => quizTabType === 'lesson' ? !q.isComprehensive : q.isComprehensive)
+                            .filter(q => {
+                              const isSolved = submissionsList.some(s => s.quizId === q.id);
+                              if (quizzesFilter === 'completed') return isSolved;
+                              if (quizzesFilter === 'pending') return !isSolved;
+                              return true;
+                            })
+                            .map(quiz => {
+                              const sub = submissionsList.find(s => s.quizId === quiz.id);
+                              const courseInfo = coursesList.find(c => c.id === quiz.courseId);
+                              return (
+                                <div
+                                  key={quiz.id}
+                                  className="relative group bg-white dark:bg-[#1A1A24] hover:bg-gray-50 dark:hover:bg-[#1C1C28] border border-gray-150 dark:border-[#2D2D3D]/50 rounded-2xl p-4 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm"
+                                >
+                                  {/* Right side details */}
+                                  <div className="flex items-center gap-3.5 text-right flex-1">
+                                    <div className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center ${sub ? 'bg-green-500/10 text-green-500' : 'bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37]'}`}>
+                                      {sub ? <CheckCircle className="w-5 h-5" /> : <Play className="w-4 h-4" />}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <h3 className="text-sm font-black text-gray-900 dark:text-white">{quiz.title}</h3>
+                                        {quiz.isComprehensive && (
+                                          <span className="text-[9px] font-black bg-purple-500/10 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-md">امتحان شامل 🏆</span>
+                                        )}
+                                      </div>
+                                      <p className="text-[11px] text-gray-500 dark:text-gray-400 font-bold flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                                        <span>⏱️ {quiz.timeLimit} دقيقة</span>
+                                        <span>•</span>
+                                        <span>📝 {quiz.questions?.length || 0} أسئلة</span>
+                                        {courseInfo && (
+                                          <>
+                                            <span>•</span>
+                                            <span className="text-[#00B4D8] dark:text-[#D4AF37]">📚 {courseInfo.title}</span>
+                                          </>
+                                        )}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* Left side actions */}
+                                  <div className="shrink-0 w-full md:w-auto flex items-center justify-end gap-3 pt-3 md:pt-0 border-t md:border-t-0 border-gray-100 dark:border-[#2D2D3D]/50">
+                                    {sub ? (
+                                      <div className="flex items-center gap-3">
+                                        <div className="text-right">
+                                          <div className={`text-xs font-black ${sub.score >= 50 ? 'text-green-500' : 'text-red-500'}`}>
+                                            الدرجة: {sub.score}%
+                                          </div>
+                                          <div className="text-[10px] text-gray-400 font-bold">
+                                            {sub.correctAnswers}/{sub.totalQuestions} صحيح
+                                          </div>
+                                        </div>
+                                        <button
+                                          onClick={() => {
+                                            setSelectedQuizReview(quiz);
+                                            setSelectedSubmissionReview(sub);
+                                          }}
+                                          className="px-3.5 py-2 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 dark:hover:bg-[#D4AF37]/20 rounded-xl font-black text-[11px] transition-colors flex items-center gap-1.5"
+                                        >
+                                          <Award className="w-3.5 h-3.5" />
+                                          تقرير الأخطاء
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        onClick={() => {
+                                          if (quiz.isComprehensive) {
+                                            navigate(`/exam/${quiz.id}`);
+                                          } else {
+                                            navigate(`/course/${quiz.courseId}`);
+                                            toast.success('تم توجيهك لصفحة الكورس، الرجاء اختيار الدرس المطلوب وبدء الاختبار التفاعلي من داخله.');
+                                          }
+                                        }}
+                                        className="px-4 py-2 bg-[#00B4D8] dark:bg-[#D4AF37] text-white hover:bg-[#0077B6] dark:hover:bg-[#B8860B] rounded-xl font-black text-xs shadow-sm transition-all flex items-center gap-1.5 hover:-translate-y-0.5"
+                                      >
+                                        <Play className="w-3.5 h-3.5" />
+                                        ابدأ الآن
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                          {studentVisibleQuizzes
+                            .filter(q => quizTabType === 'lesson' ? !q.isComprehensive : q.isComprehensive)
+                            .filter(q => {
+                              const isSolved = submissionsList.some(s => s.quizId === q.id);
+                              if (quizzesFilter === 'completed') return isSolved;
+                              if (quizzesFilter === 'pending') return !isSolved;
+                              return true;
+                            }).length === 0 && (
+                            <div className="text-center py-12 bg-white dark:bg-[#1A1A24] border border-gray-150 dark:border-[#2D2D3D]/50 rounded-2xl">
+                              <Trophy className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                              <p className="font-bold text-xs text-gray-500">لا توجد اختبارات في هذا القسم حالياً 👍</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -2609,23 +2643,49 @@ export default function Dashboard() {
                                   const subs = submissionsList.filter(s => s.quizId === quiz.id);
                                   const isSelected = teacherSelectedQuiz?.id === quiz.id;
                                   return (
-                                    <button
+                                    <div
                                       key={quiz.id}
                                       onClick={() => {
                                         setTeacherSelectedQuiz(quiz);
                                       }}
-                                      className={`w-full p-4 rounded-2xl text-right border transition-all flex flex-col gap-2 ${
+                                      className={`w-full p-4 rounded-2xl text-right border transition-all flex flex-col gap-2 cursor-pointer ${
                                         isSelected
                                           ? 'bg-gradient-to-l from-[#00B4D8]/10 to-transparent border-[#00B4D8] dark:from-[#D4AF37]/10 dark:border-[#D4AF37] shadow-sm'
                                           : 'bg-white dark:bg-[#1A1A24] border-gray-200 dark:border-[#2D2D3D] hover:bg-gray-50 dark:hover:bg-[#222230]'
                                       }`}
                                     >
-                                      <span className="text-[10px] bg-gray-100 dark:bg-[#222230] text-gray-500 px-2 py-0.5 rounded-full font-bold self-start">
-                                        المشاركات: {subs.length} طالب
-                                      </span>
+                                      <div className="flex justify-between items-center w-full">
+                                        <span className="text-[10px] bg-gray-100 dark:bg-[#222230] text-gray-500 px-2 py-0.5 rounded-full font-bold">
+                                          المشاركات: {subs.length} طالب
+                                        </span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setDirectingQuiz(quiz);
+                                            setDirectTargetType(quiz.targetedType || 'all');
+                                            setDirectTargetGrade(quiz.targetedGrade || 'الأول الثانوي');
+                                            setDirectTargetStudentIds(quiz.targetedStudentIds || []);
+                                          }}
+                                          className="p-1 hover:bg-gray-100 dark:hover:bg-[#2D2D3D]/50 rounded-lg text-[#00B4D8] dark:text-[#D4AF37] transition-colors"
+                                          title="توجيه ونشر الاختبار"
+                                        >
+                                          <Send className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
                                       <h4 className="font-bold text-sm text-gray-900 dark:text-white">{quiz.title}</h4>
-                                      <p className="text-xs text-gray-400 font-bold">الأسئلة: {quiz.questions?.length || 0}</p>
-                                    </button>
+                                      <div className="flex justify-between items-center text-[10px] font-bold mt-1">
+                                        <span className="text-gray-400">الأسئلة: {quiz.questions?.length || 0}</span>
+                                        {quiz.isHidden ? (
+                                          <span className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 px-1.5 py-0.5 rounded">مسودة 🙈</span>
+                                        ) : quiz.targetedType === 'grade' ? (
+                                          <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">موجه: {quiz.targetedGrade} 🎯</span>
+                                        ) : quiz.targetedType === 'custom' ? (
+                                          <span className="bg-purple-500/10 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded">موجه للطلاب 👥</span>
+                                        ) : (
+                                          <span className="bg-green-500/10 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded">منشور للجميع 🌍</span>
+                                        )}
+                                      </div>
+                                    </div>
                                   );
                                 })}
 
@@ -2752,7 +2812,20 @@ export default function Dashboard() {
                                           <span className="text-[10px] bg-gray-100 dark:bg-[#222230] text-gray-500 px-2 py-0.5 rounded-full font-bold">
                                             المشاركات: {subs.length} طالب
                                           </span>
-                                          <div className="flex gap-1">
+                                          <div className="flex gap-1.5">
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDirectingQuiz(quiz);
+                                                setDirectTargetType(quiz.targetedType || 'all');
+                                                setDirectTargetGrade(quiz.targetedGrade || 'الأول الثانوي');
+                                                setDirectTargetStudentIds(quiz.targetedStudentIds || []);
+                                              }}
+                                              className="p-1 hover:bg-gray-100 dark:hover:bg-[#2D2D3D] rounded-lg text-amber-500 transition-colors"
+                                              title="توجيه ونشر الاختبار"
+                                            >
+                                              <Send className="w-3.5 h-3.5" />
+                                            </button>
                                             <button
                                               onClick={(e) => {
                                                 e.stopPropagation();
@@ -2782,6 +2855,17 @@ export default function Dashboard() {
                                         <div className="flex items-center justify-between text-[11px] text-gray-400 font-bold">
                                           <span>الأسئلة: {quiz.questions?.length || 0}</span>
                                           <span>{courseInfo ? courseInfo.title : "امتحان عام"}</span>
+                                        </div>
+                                        <div className="flex justify-end mt-1 text-[10px] font-bold">
+                                          {quiz.isHidden ? (
+                                            <span className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 px-1.5 py-0.5 rounded">مسودة 🙈</span>
+                                          ) : quiz.targetedType === 'grade' ? (
+                                            <span className="bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">موجه: {quiz.targetedGrade} 🎯</span>
+                                          ) : quiz.targetedType === 'custom' ? (
+                                            <span className="bg-purple-500/10 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded">موجه للطلاب 👥</span>
+                                          ) : (
+                                            <span className="bg-green-500/10 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded">منشور للجميع 🌍</span>
+                                          )}
                                         </div>
                                       </div>
                                     );
@@ -3169,6 +3253,8 @@ export default function Dashboard() {
         {(userData?.role === 'admin' ? [
             { id: 'home', icon: Target, label: 'الرئيسية' },
             { id: 'admin', icon: Shield, label: 'الإدارة' },
+            { id: 'admin_recharge', icon: Ticket, label: 'الشحن' },
+            { id: 'admin_courses', icon: BookOpen, label: 'الكورسات' },
             { id: 'profile', icon: UserIcon, label: 'حسابي' },
         ] : userData?.role === 'teacher' ? [
             { id: 'home', icon: Target, label: 'الرئيسية' },

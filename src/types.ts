@@ -13,6 +13,7 @@ export interface User {
   dateOfBirth?: string;
   teachingGrades?: string[];
   studentPhone?: string;
+  balance?: number;
 }
 
 export interface Course {
@@ -41,6 +42,7 @@ export interface Lesson {
   title: string;
   description: string;
   videoUrl: string;
+  bunnyVideoId?: string;
   order: number;
   createdAt: string;
   views?: number;
@@ -127,6 +129,7 @@ export interface Quiz {
   timeLimit?: number; // in minutes (0 or undefined for no limit)
   createdBy: string;
   createdAt: string;
+  isHidden?: boolean;
 }
 
 export interface QuizSubmission {
@@ -143,6 +146,8 @@ export interface QuizSubmission {
   answers: Record<string, number>; // questionId -> selectedOptionIndex
   submittedAt: string;
   passed: boolean;
+  infractionsCount?: number;
+  cheatedViolation?: boolean;
 }
 
 export interface QuickNote {

@@ -150,7 +150,7 @@ export default function PomodoroTimer({
 
   useEffect(() => {
     fetchSessions();
-  }, [userData, courseId]);
+  }, [userData?.id, courseId]);
 
   // Sync timeLeft when durations change and timer is NOT active
   useEffect(() => {

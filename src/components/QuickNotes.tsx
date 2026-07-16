@@ -58,7 +58,7 @@ export default function QuickNotes({ db, userData }: QuickNotesProps) {
     };
 
     fetchCourses();
-  }, [db, userData]);
+  }, [db, userData?.id]);
 
   // Sync / Listen to Quick Notes from Firestore
   useEffect(() => {
@@ -105,7 +105,7 @@ export default function QuickNotes({ db, userData }: QuickNotesProps) {
     };
 
     return () => unsubscribe();
-  }, [db, userData]);
+  }, [db, userData?.id]);
 
   const handleSaveNote = async (e: React.FormEvent) => {
     e.preventDefault();

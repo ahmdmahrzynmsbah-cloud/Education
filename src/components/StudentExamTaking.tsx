@@ -1,7 +1,7 @@
 import React from "react";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Play, Clock, BookOpen, ChevronRight, ChevronLeft, Award, CheckCircle, AlertTriangle } from "lucide-react";
+import { X, Play, Clock, BookOpen, ChevronRight, ChevronLeft, Award, CheckCircle, AlertTriangle, Shield } from "lucide-react";
 import { doc, setDoc } from "firebase/firestore";
 import { toast } from "react-hot-toast";
 
@@ -37,6 +37,10 @@ export default function StudentExamTaking({
   const [timeLeft, setTimeLeft] = useState<number | null>(null); // in seconds
   const [submitting, setSubmitting] = useState(false);
   
+  // Tab lock and infractions state
+  const [infractions, setInfractions] = useState(0);
+  const [showInfractionWarning, setShowInfractionWarning] = useState(false);
+
   // Results view states
   const [showResults, setShowResults] = useState(false);
   const [submissionResult, setSubmissionResult] = useState<any>(null);
@@ -52,6 +56,8 @@ export default function StudentExamTaking({
       setTimeLeft((exam.timeLimit || 30) * 60);
       setShowResults(false);
       setSubmissionResult(null);
+      setInfractions(0);
+      setShowInfractionWarning(false);
     }
   }, [isOpen, exam]);
 
@@ -78,6 +84,37 @@ export default function StudentExamTaking({
     };
   }, [examStarted, timeLeft]);
 
+  // Prevent accidental page exit and tab switches (Anti-Cheat & Tab Lock)
+  useEffect(() => {
+    if (!examStarted || showResults || !isOpen) return;
+
+    // Track tab-switches (blur and visibilitychange)
+    const handleVisibilityOrBlur = () => {
+      if (document.hidden || !document.hasFocus()) {
+        setInfractions((prev) => {
+          const nextVal = prev + 1;
+          if (nextVal >= 3) {
+            setShowInfractionWarning(false);
+            toast.error("تم إلغاء الامتحان وتسلّيمه تلقائياً بسبب تجاوزك عدد محاولات الخروج المسموح بها (3 محاولات)!");
+            handleSubmit(undefined, true); // True indicates a forced submission due to cheating violation
+            return nextVal;
+          } else {
+            setShowInfractionWarning(true);
+            return nextVal;
+          }
+        });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityOrBlur);
+    window.addEventListener("blur", handleVisibilityOrBlur);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityOrBlur);
+      window.removeEventListener("blur", handleVisibilityOrBlur);
+    };
+  }, [examStarted, showResults, isOpen, infractions]);
+
   const handleStart = () => {
     setExamStarted(true);
     toast.success("بدأ الامتحان! بالتوفيق والنجاح 👍");
@@ -90,7 +127,7 @@ export default function StudentExamTaking({
     }));
   };
 
-  const handleSubmit = async (overrideAnswers?: Record<string, number>) => {
+  const handleSubmit = async (overrideAnswers?: Record<string, number>, cheatedViolation = false) => {
     if (timerRef.current) clearInterval(timerRef.current);
     setSubmitting(true);
 
@@ -113,7 +150,7 @@ export default function StudentExamTaking({
       });
 
       const percentScore = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
-      const passed = percentScore >= 50;
+      const passed = percentScore >= 50 && !cheatedViolation;
 
       const submissionId = `${userData.id}_${exam.id}`;
       const submissionData = {
@@ -130,6 +167,8 @@ export default function StudentExamTaking({
         answers: finalAnswers,
         submittedAt: new Date().toISOString(),
         passed,
+        infractionsCount: infractions,
+        cheatedViolation: cheatedViolation,
       };
 
       await setDoc(doc(db, "quiz_submissions", submissionId), submissionData);
@@ -137,7 +176,11 @@ export default function StudentExamTaking({
       setSubmissionResult(submissionData);
       onSubmissionSuccess(submissionData);
       setShowResults(true);
-      toast.success("تم تسليم الامتحان الشامل وحفظ نتيجتك بنجاح! 🎉");
+      if (cheatedViolation) {
+        toast.error("تم إنهاء الاختبار وتسليمه بتقرير مخالفة غش بسبب مغادرة الصفحة!");
+      } else {
+        toast.success("تم تسليم الامتحان الشامل وحفظ نتيجتك بنجاح! 🎉");
+      }
     } catch (err) {
       console.error("Error submitting comprehensive exam:", err);
       toast.error("فشل تسليم الامتحان. يرجى المحاولة مرة أخرى.");
@@ -206,6 +249,29 @@ export default function StudentExamTaking({
                 </div>
               </div>
 
+              {/* Infractions Summary if present */}
+              {(submissionResult.infractionsCount !== undefined || submissionResult.cheatedViolation) && (
+                <div className={`p-4 rounded-2xl text-xs font-black text-right flex gap-3 items-start border w-full max-w-md ${
+                  submissionResult.cheatedViolation
+                    ? "bg-red-50/60 dark:bg-red-950/20 border-red-200 dark:border-red-900/30 text-red-600 dark:text-red-400"
+                    : (submissionResult.infractionsCount || 0) > 0
+                      ? "bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/30 text-amber-600 dark:text-amber-400"
+                      : "bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-400"
+                }`}>
+                  <Shield className="w-5 h-5 shrink-0" />
+                  <div>
+                    <p className="font-black text-xs">مؤشرات الأمان ومصداقية الاختبار:</p>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-300 font-bold mt-1 leading-relaxed">
+                      {submissionResult.cheatedViolation
+                        ? "تم إنهاء الاختبار وإغلاقه تلقائياً بسبب مغادرتك لصفحة الامتحان أكثر من العدد المسموح به (3 مخالفات خروج)."
+                        : (submissionResult.infractionsCount || 0) > 0
+                          ? `تم رصد عدد ${submissionResult.infractionsCount} محاولات خروج من الصفحة أو تغيير التبويب أثناء حل الاختبار.`
+                          : "عمل ممتاز! لم يتم تسجيل أي محاولات خروج من صفحة الاختبار. مصداقية أدائك كاملة 100% 👍"}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <p className="text-xs text-gray-500 max-w-md leading-relaxed font-medium">
                 تم تسجيل هذه المحاولة وحفظ الدرجة في لوحة القيادة الخاصة بك. يمكنك مراجعة تقرير الأخطاء بالتفصيل لاحقاً من قسم الاختبارات والتقييم بالضغط على "تقرير الإجابات والأخطاء".
               </p>
@@ -265,6 +331,7 @@ export default function StudentExamTaking({
                       <li>بمجرد الضغط على زر "بدء الامتحان"، سيبدأ المؤقت التنازلي فوراً ولا يمكن إيقافه مؤقتاً.</li>
                       <li>في حال خروجك أو إغلاقك للصفحة، سيستمر المؤقت بالعمل وسيتم تسليم إجاباتك تلقائياً عند انتهاء المدة.</li>
                       <li>تأكد من استقرار اتصال الإنترنت لديك قبل البدء.</li>
+                      <li className="text-indigo-600 dark:text-indigo-400 font-black">نظام حماية ومراقبة التبويب وقفل الشاشة نشط بالكامل. مغادرة صفحة الاختبار أو تغيير التبويب لأكثر من 3 مرات يعرضك لإلغاء الامتحان وتسليمه تلقائياً مع تسجيل تقرير غش للمُعلّم!</li>
                     </ul>
                   </div>
 
@@ -296,15 +363,27 @@ export default function StudentExamTaking({
             /* ACTIVE EXAM RUNNING */
             <div className="flex flex-col flex-1 overflow-hidden">
               {/* Active Header */}
-              <div className="p-6 border-b border-gray-100 dark:border-[#2D2D3D] bg-gray-50 dark:bg-[#13131C] flex items-center justify-between">
+              <div className="p-6 border-b border-gray-100 dark:border-[#2D2D3D] bg-gray-50 dark:bg-[#13131C] flex flex-col sm:flex-row gap-3 items-center justify-between">
                 <div>
                   <h4 className="font-black text-sm text-gray-900 dark:text-white truncate max-w-sm">{exam.title}</h4>
                   <p className="text-[10px] text-gray-400 font-bold mt-0.5">
                     السؤال {currentIdx + 1} من {questionsList.length}
                   </p>
                 </div>
+
+                {/* Elegant Protection Badge */}
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100/60 dark:border-indigo-900/35">
+                  <Shield className="w-4 h-4 text-indigo-500 shrink-0 animate-pulse" />
+                  <div className="text-right">
+                    <p className="text-[9px] text-indigo-600 dark:text-indigo-400 font-black leading-none">نظام مراقبة التبويب نشط 🔒</p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-300 font-bold mt-1">
+                      الخروج من الصفحة: <span className={infractions > 0 ? "text-red-500 font-black text-xs" : "text-emerald-500 font-black"}>{infractions} / 3</span>
+                    </p>
+                  </div>
+                </div>
+
                 {/* Timer Clock widget */}
-                <div className={`px-4 py-2 rounded-2xl flex items-center gap-2 border font-black text-sm select-none ${
+                <div className={`px-4 py-2 rounded-2xl flex items-center gap-2 border font-black text-sm select-none w-full sm:w-auto justify-center ${
                   timeLeft !== null && timeLeft < 120 
                     ? "bg-red-50 text-red-600 border-red-200 animate-pulse" 
                     : "bg-[#00B4D8]/10 text-[#0077B6] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] border-transparent"
@@ -427,6 +506,60 @@ export default function StudentExamTaking({
           )}
         </motion.div>
       </div>
+
+      {/* 3. Infraction/Cheating Warning Modal */}
+      <AnimatePresence>
+        {showInfractionWarning && infractions < 3 && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/75 backdrop-blur-md"
+            />
+            
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative bg-white dark:bg-[#12121A] rounded-3xl p-6 max-w-md w-full shadow-2xl border border-red-500/30 space-y-6 text-center z-10"
+            >
+              <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto animate-bounce">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+
+              <div className="space-y-2 text-center">
+                <h3 className="text-lg font-black text-red-650 dark:text-red-400">⚠️ تحذير: تم كشف مغادرة صفحة الاختبار!</h3>
+                <p className="text-xs text-gray-400 font-bold">نظام الحماية وقفل التبويب الإلكتروني</p>
+              </div>
+
+              <div className="space-y-4 text-right bg-red-50/50 dark:bg-red-950/10 p-4 rounded-2xl border border-red-100 dark:border-red-900/20">
+                <p className="text-xs text-gray-750 dark:text-gray-300 leading-relaxed font-bold">
+                  لقد قمت بالخروج من تبويب أو نافذة الاختبار. هذا السلوك مخالف لتعليمات الامتحان الإلكتروني وقد يُعرضك لإلغاء النتيجة.
+                </p>
+                <div className="flex justify-between items-center text-xs font-black border-t border-red-100 dark:border-red-900/10 pt-3 mt-1">
+                  <span className="text-gray-500">عدد المخالفات المسجلة:</span>
+                  <span className="text-red-500 font-black text-sm">{infractions} من أصل 3 محاولات</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/10 rounded-xl text-[10px] text-amber-600 dark:text-amber-400 font-black text-right flex gap-1.5 items-start">
+                <Shield className="w-3.5 h-3.5 shrink-0 animate-pulse mt-0.5" />
+                <span>تنبيه هام: إذا وصلت المخالفات إلى 3، فسيقوم النظام تلقائياً بإنهاء الاختبار وتسليم إجاباتك الحالية فوراً مع تسجيل تقرير غش!</span>
+              </div>
+
+              <button
+                onClick={() => setShowInfractionWarning(false)}
+                className="w-full py-3.5 bg-red-600 hover:bg-red-750 text-white rounded-xl text-xs font-black transition-all shadow-lg shadow-red-600/20"
+              >
+                أفهم ذلك، العودة لحل الاختبار ✍️
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </AnimatePresence>
   );
 }

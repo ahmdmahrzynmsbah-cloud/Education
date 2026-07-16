@@ -13,6 +13,7 @@ import confetti from 'canvas-confetti';
 import QuizSection from './QuizSection';
 import PomodoroTimer from './PomodoroTimer';
 import LuxuriousLoader from './LuxuriousLoader';
+import BunnyVideoPlayer from './BunnyVideoPlayer';
 
 export default function CourseDetails() {
   const { id } = useParams<{ id: string }>();
@@ -1131,6 +1132,7 @@ export default function CourseDetails() {
                   )}
                 </div>
               ) : activeLesson ? (
+                activeLesson.bunnyVideoId ? <BunnyVideoPlayer videoId={activeLesson.bunnyVideoId} /> :
                 activeLesson.videoUrl.includes('youtube.com') || activeLesson.videoUrl.includes('youtu.be') ? (
                   <iframe 
                     src={getEmbedUrl(activeLesson.videoUrl)} 

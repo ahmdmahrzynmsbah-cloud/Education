@@ -67,13 +67,13 @@ export default function LandingPage() {
           return {
             id: doc.id,
             name: data.name || 'طالب مجهول',
-            points: Number(data.points) || 500,
+            stars: Number(data.stars) || 50,
             current: auth.currentUser?.uid === doc.id
           };
     });
 
-        // Sort descending by points
-        studentsList.sort((a, b) => b.points - a.points);
+        // Sort descending by stars
+        studentsList.sort((a, b) => b.stars - a.stars);
 
         setLeaderboard(studentsList);
       } catch (err) {

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, updateDoc, doc, deleteDoc, getDoc, setDoc, onSnapshot, arrayUnion, addDoc } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, deleteDoc, getDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, addDoc, query, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { 
   Users, BookOpen, Shield, Trash2, Edit2, Edit3, Loader2, CheckCircle2, 
-  Eye, EyeOff, Printer, X, Calendar, User, Mail, Phone, Lock, 
+  Eye, EyeOff, Printer, X, Calendar, User as UserIcon, Mail, Phone, Lock, 
   GraduationCap, Book, AlertTriangle, FileText, Settings, Sparkles, 
   Hash, Award, FileCheck, Check, Activity, ShieldAlert,
   MapPin, School, PhoneCall, Layers, Clock, Search, Filter,
-  ArrowUpDown, SlidersHorizontal, RotateCcw, Archive,
-  CreditCard, Image as ImageIcon, XCircle
+  ArrowUpDown, SlidersHorizontal, RotateCcw, Archive, Download,
+  CreditCard, Image as ImageIcon, XCircle, Copy, History, DollarSign, Ticket, Wallet, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import toast from 'react-hot-toast';
@@ -89,12 +89,502 @@ const getMockReportRecords = (role: string, rangeType: 'all' | 'month' | 'custom
   });
 };
 
-export default function AdminPanel() {
+const WalletRecharge = ({ users, setUsers, payments }: { users: any[], setUsers: React.Dispatch<React.SetStateAction<any[]>>, payments: any[] }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [amount, setAmount] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [rechargeCodes, setRechargeCodes] = useState<any[]>([]);
+  const [loadingCodes, setLoadingCodes] = useState(false);
+  const [codeToDelete, setCodeToDelete] = useState<string | null>(null);
+
+  // Filter students based on search query
+  const filteredStudents = users.filter(u => 
+    u.role === 'student' && 
+    (u.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+     u.phone?.includes(searchQuery) ||
+     u.email?.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  // Fetch recent recharge codes
+  const fetchRechargeCodes = async () => {
+    setLoadingCodes(true);
+    try {
+      const q = query(collection(db, 'recharge_codes'), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      const codes: any[] = [];
+      snap.forEach(doc => {
+        codes.push({ id: doc.id, ...doc.data() as object });
+      });
+      setRechargeCodes(codes);
+    } catch (e) {
+      console.error("Error fetching recharge codes:", e);
+    } finally {
+      setLoadingCodes(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRechargeCodes();
+  }, []);
+
+  const handleDirectCharge = async () => {
+    if (!selectedStudent || !amount || Number(amount) <= 0) {
+      toast.error('يرجى تحديد الطالب وإدخال مبلغ شحن صحيح');
+      return;
+    }
+    setLoading(true);
+    try {
+      const userRef = doc(db, 'users', selectedStudent.id);
+      const chargeAmt = Number(amount);
+      const newBalance = (selectedStudent.balance || 0) + chargeAmt;
+      
+      // Update balance
+      await updateDoc(userRef, { balance: newBalance });
+      
+      // Record transaction
+      await addDoc(collection(db, 'transactions'), {
+        userId: selectedStudent.id,
+        chargedBy: 'admin',
+        type: 'charge',
+        amount: chargeAmt,
+        codeUsed: 'DIRECT_ADMIN_CHARGE',
+        description: `شحن رصيد مباشر بواسطة إدارة المنصة بقيمة ${chargeAmt} ج.م`,
+        createdAt: new Date().toISOString()
+      });
+
+      setUsers(prev => prev.map(u => u.id === selectedStudent.id ? { ...u, balance: newBalance } : u));
+      setSelectedStudent(prev => prev ? { ...prev, balance: newBalance } : null);
+      
+      toast.success(`تم شحن رصيد بقيمة ${chargeAmt} ج.م للطالب ${selectedStudent.name} بنجاح! 🎉`);
+      setAmount('');
+    } catch (e) {
+      console.error(e);
+      toast.error('فشل شحن الرصيد المباشر');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateCode = async () => {
+    if (!selectedStudent || !amount || Number(amount) <= 0) {
+      toast.error('يرجى تحديد الطالب وإدخال مبلغ شحن صحيح');
+      return;
+    }
+    setLoading(true);
+    try {
+      const chargeAmt = Number(amount);
+      
+      // Generate a secure unique alphanumeric string of length 8
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let randomSuffix = '';
+      for (let i = 0; i < 8; i++) {
+        randomSuffix += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      const code = `TF-${chargeAmt}-${randomSuffix}`;
+
+      // Store in firestore recharge_codes
+      await setDoc(doc(db, 'recharge_codes', code), {
+        code,
+        amount: chargeAmt,
+        used: false,
+        createdAt: new Date().toISOString(),
+        generatedForId: selectedStudent.id,
+        generatedForName: selectedStudent.name,
+        generatedForPhone: selectedStudent.phone || ''
+      });
+
+      setGeneratedCode(code);
+      toast.success('تم توليد كود الشحن بنجاح! 🎫');
+      setAmount('');
+      fetchRechargeCodes();
+    } catch (e) {
+      console.error(e);
+      toast.error('فشل توليد كود الشحن');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const executeDeleteCode = async (codeId: string) => {
+    try {
+      await deleteDoc(doc(db, 'recharge_codes', codeId));
+      toast.success('تم حذف كارت الشحن بنجاح 🎉');
+      setCodeToDelete(null);
+      fetchRechargeCodes();
+    } catch (e) {
+      console.error(e);
+      toast.error('فشل حذف كود الشحن');
+    }
+  };
+
+  // Calculate total amount student has paid
+  const studentPayments = payments.filter(p => p.userId === selectedStudent?.id && p.status === 'approved');
+  const totalPaid = studentPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-300" dir="rtl">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* Right column: Search & Select Student */}
+        <div className="lg:col-span-1 bg-white dark:bg-[#1A1A24] p-6 rounded-3xl border border-gray-200 dark:border-[#2D2D3D] shadow-sm space-y-4">
+          <h3 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
+            <Users className="w-5 h-5 text-[#00B4D8] dark:text-[#D4AF37]" /> البحث عن طالب
+          </h3>
+          <div className="relative">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="ابحث باسم الطالب، رقم الهاتف..."
+              className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-2xl pr-9 pl-4 py-3 outline-none focus:ring-2 focus:ring-[#00B4D8]/20 focus:border-[#00B4D8] text-sm font-bold text-gray-900 dark:text-white"
+            />
+          </div>
+
+          <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+            {(searchQuery ? filteredStudents : users.filter(u => u.role === 'student' || !u.role)).length > 0 ? (
+              (searchQuery ? filteredStudents : users.filter(u => u.role === 'student' || !u.role)).slice(0, 50).map(student => (
+                <button
+                  key={student.id}
+                  onClick={() => {
+                    setSelectedStudent(student);
+                    setGeneratedCode(null);
+                  }}
+                  className={`w-full text-right p-3 rounded-2xl border text-sm font-bold flex items-center justify-between transition-all ${
+                    selectedStudent?.id === student.id
+                      ? 'border-[#00B4D8] dark:border-[#D4AF37] bg-[#00B4D8]/5 dark:bg-[#D4AF37]/5 text-[#00B4D8] dark:text-[#D4AF37]'
+                      : 'border-gray-100 dark:border-[#2D2D3D] hover:bg-gray-50 dark:hover:bg-[#15151F] text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-black">{student.name}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 font-bold mt-1">{student.phone || 'بدون هاتف'}</p>
+                  </div>
+                  <span className="text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-500 px-2 py-1 rounded-full font-black">
+                    {student.grade === '1' ? 'الصف الأول' : student.grade === '2' ? 'الصف الثاني' : 'الصف الثالث'}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p className="text-xs text-gray-400 text-center py-4 font-bold">
+                {searchQuery ? 'لا يوجد نتائج بحث مطابقة' : 'لا يوجد طلاب مسجلين بالمنصة حالياً'}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Left column: Student Details & Actions */}
+        <div className="lg:col-span-2 space-y-6">
+          {selectedStudent ? (
+            <div className="bg-white dark:bg-[#1A1A24] p-6 rounded-3xl border border-gray-200 dark:border-[#2D2D3D] shadow-sm space-y-6">
+              {/* Student Header Info */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-gray-100 dark:border-[#2D2D3D]">
+                <div>
+                  <h4 className="text-xl font-black text-gray-900 dark:text-white">{selectedStudent.name}</h4>
+                  <p className="text-xs font-bold text-gray-400 mt-1">{selectedStudent.email || 'لا يوجد بريد إلكتروني مسجل'}</p>
+                </div>
+                <span className="bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] text-xs font-black px-3 py-1.5 rounded-full">
+                  طالب نشط بالمنصة 🎓
+                </span>
+              </div>
+
+              {/* Financial Balance Summary */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-gray-50 dark:bg-[#0D0D12]/50 border border-gray-100 dark:border-[#2D2D3D] rounded-2xl p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl flex items-center justify-center text-emerald-500 shrink-0">
+                    <Wallet className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-0.5">الرصيد المتاح حالياً</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white">{(selectedStudent.balance || 0).toLocaleString('ar-EG')} ج.م</p>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 dark:bg-[#0D0D12]/50 border border-gray-100 dark:border-[#2D2D3D] rounded-2xl p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950/30 rounded-xl flex items-center justify-center text-amber-500 shrink-0">
+                    <DollarSign className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-0.5">إجمالي المدفوعات المعتمدة</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white">{totalPaid.toLocaleString('ar-EG')} ج.م</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recharge Input & Form */}
+              <div className="space-y-4">
+                <label className="text-xs font-black text-gray-500 dark:text-gray-400">مبلغ الشحن المطلوب:</label>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  {['50', '100', '150', '200', '300', '500'].map(val => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setAmount(val)}
+                      className={`py-2 px-3 text-xs font-black rounded-xl border transition-all ${
+                        amount === val
+                          ? 'border-[#00B4D8] dark:border-[#D4AF37] bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 text-[#00B4D8] dark:text-[#D4AF37]'
+                          : 'border-gray-100 dark:border-[#2D2D3D] hover:bg-gray-50 dark:hover:bg-[#15151F] text-gray-600 dark:text-gray-400'
+                      }`}
+                    >
+                      {val} ج.م
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="أو أدخل مبلغاً مخصصاً هنا..."
+                    className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#00B4D8]/20 focus:border-[#00B4D8] text-sm font-bold text-gray-900 dark:text-white"
+                  />
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-black text-gray-400">جنيه مصري</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <button
+                  type="button"
+                  onClick={handleGenerateCode}
+                  disabled={loading || !amount}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 bg-gradient-to-r from-[#00B4D8] to-[#0077B6] dark:from-[#D4AF37] dark:to-[#B8860B] hover:opacity-90 disabled:opacity-50 text-white rounded-2xl font-black text-sm transition-all shadow-md active:scale-95 duration-200 cursor-pointer"
+                >
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Ticket className="w-4 h-4" />
+                  )}
+                  <span>توليد كارت شحن (كود تفعيل)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDirectCharge}
+                  disabled={loading || !amount}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-2xl font-black text-sm transition-all shadow-md active:scale-95 duration-200 cursor-pointer"
+                >
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Wallet className="w-4 h-4" />
+                  )}
+                  <span>شحن مباشر فورياً للمحفظة</span>
+                </button>
+              </div>
+
+              {/* Display Generated Code Result */}
+              <AnimatePresence>
+                {generatedCode && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="p-6 bg-amber-50 dark:bg-amber-950/20 border-2 border-dashed border-amber-300 dark:border-amber-800/50 rounded-3xl text-center space-y-4"
+                  >
+                    <div>
+                      <span className="text-xs font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest block mb-1">كارت شحن Teachland جاهز للاستخدام! 🎫</span>
+                      <h5 className="text-sm font-bold text-gray-500 dark:text-gray-400">أرسل هذا الكود للطالب ليقوم بتفعيله وشحن محفظته تلقائياً:</h5>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                      <div className="bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-2xl px-6 py-3 font-mono text-lg font-black text-gray-900 dark:text-white select-all">
+                        {generatedCode}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(generatedCode);
+                          toast.success('تم نسخ كود الشحن بنجاح! 📋');
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-3 bg-[#00B4D8] dark:bg-[#D4AF37] hover:opacity-90 text-white rounded-2xl text-xs font-black transition-all shadow-sm active:scale-95"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        نسخ الكود
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-[#1A1A24] p-8 rounded-3xl border border-gray-200 dark:border-[#2D2D3D] shadow-sm text-center space-y-4 py-16">
+              <div className="w-16 h-16 bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 text-[#00B4D8] dark:text-[#D4AF37] rounded-full flex items-center justify-center mx-auto">
+                <UserIcon className="w-8 h-8" />
+              </div>
+              <h4 className="text-lg font-black text-gray-900 dark:text-white">يرجى تحديد طالب من قائمة البحث أولاً 👆</h4>
+              <p className="text-xs text-gray-400 dark:text-gray-500 font-bold max-w-sm mx-auto">
+                ابحث عن اسم الطالب المطلوب، ثم حدده لعرض تفاصيله المالية، كشف مدفوعاته، وإتمام عمليات شحن الرصيد له.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Recent Recharge Codes generated */}
+      <div className="bg-white dark:bg-[#1A1A24] p-6 rounded-3xl border border-gray-200 dark:border-[#2D2D3D] shadow-sm space-y-6">
+        <div className="flex justify-between items-center pb-4 border-b border-gray-100 dark:border-[#2D2D3D]">
+          <h3 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
+            <History className="w-5 h-5 text-gray-400" /> كروت الشحن وأكواد التفعيل المصدرة حديثاً
+          </h3>
+          <button
+            onClick={fetchRechargeCodes}
+            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            title="تحديث القائمة"
+          >
+            <RefreshCw className={`w-4 h-4 ${loadingCodes ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {loadingCodes ? (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="w-6 h-6 text-[#00B4D8] dark:text-[#D4AF37] animate-spin" />
+          </div>
+        ) : rechargeCodes.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-right border-collapse text-xs md:text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 dark:border-[#2D2D3D] text-gray-400 font-black">
+                  <th className="pb-3 pt-1">كود التفعيل</th>
+                  <th className="pb-3 pt-1">القيمة</th>
+                  <th className="pb-3 pt-1">صادر للطالب</th>
+                  <th className="pb-3 pt-1">الحالة</th>
+                  <th className="pb-3 pt-1">تاريخ الإصدار</th>
+                  <th className="pb-3 pt-1 text-center">إجراءات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50 dark:divide-[#2D2D3D]/50 font-bold">
+                {rechargeCodes.map(codeDoc => (
+                  <tr key={codeDoc.code} className="hover:bg-gray-50/50 dark:hover:bg-[#15151F]/40 transition-colors">
+                    <td className="py-4 font-mono font-black text-[#00B4D8] dark:text-[#D4AF37]">{codeDoc.code}</td>
+                    <td className="py-4">{codeDoc.amount.toLocaleString('ar-EG')} ج.م</td>
+                    <td className="py-4">
+                      <div>
+                        <p className="text-gray-900 dark:text-white">{codeDoc.generatedForName || 'غير محدد'}</p>
+                        <p className="text-[10px] text-gray-400 font-bold">{codeDoc.generatedForPhone || ''}</p>
+                      </div>
+                    </td>
+                    <td className="py-4">
+                      {codeDoc.used ? (
+                        <span className="bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400 text-[10px] px-2.5 py-1 rounded-full font-black">
+                          مستخدمة ❌
+                        </span>
+                      ) : (
+                        <span className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400 text-[10px] px-2.5 py-1 rounded-full font-black">
+                          جاهزة للاستخدام ✨
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-4 text-gray-400 text-xs">
+                      {new Date(codeDoc.createdAt).toLocaleDateString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="py-4 text-center">
+                      <div className="flex justify-center items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(codeDoc.code);
+                            toast.success('تم نسخ كود الشحن بنجاح! 📋');
+                          }}
+                          className="p-1.5 bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-lg"
+                          title="نسخ الكود"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCodeToDelete(codeDoc.id || codeDoc.code)}
+                          className="p-1.5 bg-red-50 dark:bg-red-950/20 text-red-500 hover:text-red-700 rounded-lg"
+                          title="حذف الكارت"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 text-center py-8 font-bold">لا توجد أكواد تفعيل مولدة حالياً</p>
+        )}
+      </div>
+
+      {/* Confirmation Modal for deletion */}
+      <AnimatePresence>
+        {codeToDelete && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#1A1A24] max-w-md w-full rounded-3xl p-6 shadow-2xl border border-gray-100 dark:border-[#2D2D3D] text-right space-y-4"
+              dir="rtl"
+            >
+              <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/30 flex items-center justify-center text-red-500 mx-auto">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              
+              <div className="text-center space-y-2">
+                <h4 className="text-lg font-black text-gray-900 dark:text-white">تأكيد حذف كود الشحن</h4>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-bold leading-relaxed">
+                  هل أنت متأكد من رغبتك في حذف كود الشحن <span className="font-mono text-[#00B4D8] dark:text-[#D4AF37] font-black">{codeToDelete}</span> نهائياً؟
+                </p>
+                <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 p-2.5 rounded-xl font-bold leading-relaxed">
+                  ⚠️ تنبيه: هذا الإجراء نهائي ولا يمكن التراجع عنه! لن يتمكن الطالب من استخدام هذا الكارت لشحن رصيده بعد حذفه.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => executeDeleteCode(codeToDelete)}
+                  className="bg-red-500 hover:bg-red-600 text-white font-black py-3 rounded-2xl shadow-md shadow-red-500/10 transition-colors cursor-pointer"
+                >
+                  حذف نهائي
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCodeToDelete(null)}
+                  className="bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 font-black py-3 rounded-2xl transition-colors cursor-pointer"
+                >
+                  إلغاء الحذف
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+export default function AdminPanel({ initialTab, userData }: { initialTab?: 'students' | 'teachers' | 'parents' | 'approvals' | 'payments' | 'settings' | 'wallet' | 'courses'; userData?: any }) {
   const [users, setUsers] = useState<any[]>([]);
   const [progressRecords, setProgressRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'students' | 'teachers' | 'parents' | 'approvals' | 'payments' | 'settings'>('students');
+  const [activeTab, setActiveTab] = useState<'students' | 'teachers' | 'parents' | 'approvals' | 'payments' | 'settings' | 'wallet' | 'courses'>(initialTab || 'students');
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
   const [studentStatusFilter, setStudentStatusFilter] = useState<'active' | 'archived'>('active');
+
+  // Courses states
+  const [courses, setCourses] = useState<any[]>([]);
+  const [coursesSearchQuery, setCoursesSearchQuery] = useState('');
+  const [coursesGradeFilter, setCoursesGradeFilter] = useState('all');
+  const [selectedCourseForStudents, setSelectedCourseForStudents] = useState<any | null>(null);
+  const [selectedCourseForEdit, setSelectedCourseForEdit] = useState<any | null>(null);
+  const [courseToDelete, setCourseToDelete] = useState<any | null>(null);
+  const [updatingCourseId, setUpdatingCourseId] = useState<string | null>(null);
 
   // Platform dynamic settings state
   const [platformSettings, setPlatformSettings] = useState({
@@ -121,6 +611,8 @@ export default function AdminPanel() {
   const [paymentSearch, setPaymentSearch] = useState('');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   
+  const [viewImageModalOpen, setViewImageModalOpen] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   // Rejection modal state
   const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
@@ -155,6 +647,8 @@ export default function AdminPanel() {
   const [customReportNotes, setCustomReportNotes] = useState('');
   const [showSignatures, setShowSignatures] = useState(true);
 
+  const [deletePaymentModalOpen, setDeletePaymentModalOpen] = useState(false);
+  const [paymentToDelete, setPaymentToDelete] = useState<string | null>(null);
   // Delete Modal State
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<string | null>(null);
@@ -223,9 +717,21 @@ export default function AdminPanel() {
       console.error("Error listening to course payments:", error);
     });
 
+    // Real-time listener for courses collection
+    const unsubscribeCourses = onSnapshot(collection(db, 'courses'), (snapshot) => {
+      const coursesData: any[] = [];
+      snapshot.forEach((document) => {
+        coursesData.push({ id: document.id, ...document.data() });
+      });
+      setCourses(coursesData);
+    }, (error) => {
+      console.error("Error listening to courses:", error);
+    });
+
     return () => {
       unsubscribeUsers();
       unsubscribePayments();
+      unsubscribeCourses();
     };
   }, []);
 
@@ -325,6 +831,27 @@ export default function AdminPanel() {
       toast.error("فشل في حفظ إعدادات المنصة");
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+
+  const handleDeletePayment = async () => {
+    const id = paymentToDelete;
+    if (!id) return;
+    
+    // Close modal first for snappy UI
+    setDeletePaymentModalOpen(false);
+    
+    try {
+      await deleteDoc(doc(db, 'course_payments', id));
+      setPayments(prev => prev.filter(p => p.id !== id));
+      toast.success('تم حذف الطلب بنجاح');
+    } catch (err) {
+      console.error(err);
+      toast.error('حدث خطأ أثناء الحذف');
+    } finally {
+      // Clear the id after animation should have finished
+      setTimeout(() => setPaymentToDelete(null), 500);
     }
   };
 
@@ -431,17 +958,21 @@ export default function AdminPanel() {
 
   const executeDelete = async () => {
     if (!userToDelete) return;
+    
+    const id = userToDelete;
+    setDeleteModalOpen(false);
+
     try {
-      const deletedUser = users.find(u => u.id === userToDelete);
+      const deletedUser = users.find(u => u.id === id);
       const userName = deletedUser ? deletedUser.name : '';
-      await deleteDoc(doc(db, 'users', userToDelete));
-      setUsers(prev => prev.filter(u => u.id !== userToDelete));
+      await deleteDoc(doc(db, 'users', id));
+      setUsers(prev => prev.filter(u => u.id !== id));
       showSuccessToast('تم حذف حساب الطالب بنجاح من قاعدة البيانات', 'delete', userName);
-      setDeleteModalOpen(false);
-      setUserToDelete(null);
     } catch (error) {
       console.error("Error deleting user:", error);
       toast.error('فشل حذف المستخدم. تأكد من الصلاحيات.');
+    } finally {
+      setTimeout(() => setUserToDelete(null), 500);
     }
   };
 
@@ -474,6 +1005,104 @@ export default function AdminPanel() {
       toast.error('فشل تحديث البيانات');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Toggle Course Active Status
+  const handleToggleCourseActive = async (courseId: string, currentStatus: boolean) => {
+    setUpdatingCourseId(courseId);
+    try {
+      await updateDoc(doc(db, 'courses', courseId), {
+        isActive: !currentStatus
+      });
+      toast.success(currentStatus ? 'تم إلغاء تفعيل الكورس بنجاح' : 'تم تفعيل الكورس بنجاح 🎉');
+    } catch (e) {
+      console.error(e);
+      toast.error('حدث خطأ أثناء تعديل حالة الكورس');
+    } finally {
+      setUpdatingCourseId(null);
+    }
+  };
+
+  // Edit Course Submit
+  const handleEditCourseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCourseForEdit) return;
+    setUpdatingCourseId(selectedCourseForEdit.id);
+    try {
+      const { id, title, description, grade, subject, price } = selectedCourseForEdit;
+      await updateDoc(doc(db, 'courses', id), {
+        title: title.trim(),
+        description: description.trim(),
+        grade,
+        subject,
+        price: Number(price)
+      });
+      toast.success('تم تحديث بيانات الكورس بنجاح ✨');
+      setSelectedCourseForEdit(null);
+    } catch (err) {
+      console.error(err);
+      toast.error('حدث خطأ أثناء تحديث الكورس');
+    } finally {
+      setUpdatingCourseId(null);
+    }
+  };
+
+  // Delete Course
+  const executeDeleteCourse = async (courseId: string) => {
+    try {
+      await deleteDoc(doc(db, 'courses', courseId));
+      toast.success('تم حذف الكورس نهائياً بنجاح 🗑️');
+      setCourseToDelete(null);
+    } catch (err) {
+      console.error(err);
+      toast.error('فشل حذف الكورس');
+    }
+  };
+
+  // Remove student from course
+  const handleRemoveStudentFromCourse = async (studentId: string, course: any) => {
+    try {
+      const courseRef = doc(db, 'courses', course.id);
+      const enrolledStudentIds = (course.enrolledStudentIds || []).filter((id: string) => id !== studentId);
+      const enrolledStudents = Math.max(0, (course.enrolledStudents || 1) - 1);
+      
+      await updateDoc(courseRef, {
+        enrolledStudentIds,
+        enrolledStudents
+      });
+
+      // Remove course progress for the student
+      try {
+        await deleteDoc(doc(db, 'course_progress', `${studentId}_${course.id}`));
+      } catch (err) {
+        console.error("No course progress found or failed to delete:", err);
+      }
+
+      // Send a notification to the student
+      await addDoc(collection(db, 'notifications'), {
+        userId: studentId,
+        title: "تم إلغاء تفعيل اشتراك الكورس ⚠️",
+        message: `تم إلغاء تفعيل اشتراكك في كورس "${course.title}" بواسطة الإدارة.`,
+        read: false,
+        createdAt: new Date().toISOString(),
+        type: "enrollment"
+      });
+
+      toast.success('تم إلغاء اشتراك الطالب وحذفه من الكورس بنجاح');
+      
+      // Update selectedCourseForStudents state so the modal updates in real-time
+      setSelectedCourseForStudents((prev: any) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          enrolledStudentIds,
+          enrolledStudents
+        };
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error('حدث خطأ أثناء إلغاء اشتراك الطالب');
     }
   };
 
@@ -556,6 +1185,35 @@ export default function AdminPanel() {
   const parentsCount = users.filter(u => u.role === 'parent' && u.isApproved !== false).length;
   const pendingApprovalsCount = users.filter(u => u.isApproved === false).length;
   const pendingPaymentsCount = payments.filter(p => p.status === 'pending').length;
+
+  if (activeTab === 'wallet') {
+    return (
+      <div className="space-y-6 print:hidden animate-in fade-in duration-300" dir="rtl">
+        {/* Upper Panel Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-[#1A1A24] p-6 rounded-3xl border border-gray-200 dark:border-[#2D2D3D] shadow-sm">
+          <div>
+            <h2 className="text-2xl font-black text-gray-900 dark:text-white flex items-center gap-2">
+              <Ticket className="w-6 h-6 text-[#00B4D8] dark:text-[#D4AF37]" />
+              شحن رصيد الطلاب وتوليد الكروت
+            </h2>
+            <p className="text-gray-500 dark:text-gray-400 font-bold text-sm mt-1">البحث عن الطالب المطلوب، شحن محفظته مباشرة، وتوليد كروت الشحن التعليمية لـ Teachland</p>
+          </div>
+          <div className="flex items-center gap-2 bg-emerald-500/10 dark:bg-emerald-500/20 px-4 py-2 rounded-2xl border border-emerald-500/20">
+            <Activity className="w-4 h-4 text-emerald-500" />
+            <span className="text-xs font-black text-emerald-500">نظام شحن الأرصدة والكروت نشط</span>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center items-center py-20">
+            <Loader2 className="w-8 h-8 text-[#00B4D8] dark:text-[#D4AF37] animate-spin" />
+          </div>
+        ) : (
+          <WalletRecharge users={users} setUsers={setUsers} payments={payments} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 print:hidden">
@@ -746,7 +1404,7 @@ export default function AdminPanel() {
         )}
 
         {/* Search and Filters Section */}
-        {activeTab !== 'settings' && (
+        {activeTab !== 'settings' && activeTab !== 'courses' && (
           <div className="bg-gray-50/50 dark:bg-[#0D0D12]/30 p-4 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] mb-6 flex flex-col gap-4 animate-in fade-in duration-200">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
               {/* Search Input */}
@@ -1193,7 +1851,7 @@ export default function AdminPanel() {
                         <div key={payment.id} className="bg-white dark:bg-[#1A1A24] rounded-2xl border border-gray-100 dark:border-[#2D2D3D] p-5 shadow-sm hover:shadow-md transition-shadow">
                           <div className="flex flex-col md:flex-row gap-5">
                             {/* Screenshot Preview */}
-                            <div className="w-full md:w-32 h-40 bg-gray-50 dark:bg-[#0D0D12] rounded-xl border border-gray-200 dark:border-[#2D2D3D] overflow-hidden shrink-0 group relative cursor-pointer" onClick={() => payment.screenshotUrl && !['uploading...', 'failed'].includes(payment.screenshotUrl) && window.open(payment.screenshotUrl, '_blank')}>
+                            <div className="w-full md:w-32 h-40 bg-gray-50 dark:bg-[#0D0D12] rounded-xl border border-gray-200 dark:border-[#2D2D3D] overflow-hidden shrink-0 group relative cursor-pointer" onClick={() => { if(payment.screenshotUrl && !['uploading...', 'failed'].includes(payment.screenshotUrl)) { setSelectedImageUrl(payment.screenshotUrl); setViewImageModalOpen(true); } }}>
                               {payment.screenshotUrl === 'uploading...' ? (
                                 <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 gap-2 bg-gray-100 dark:bg-[#2D2D3D]">
                                   <Loader2 className="w-6 h-6 animate-spin text-[#00B4D8]" />
@@ -1226,6 +1884,7 @@ export default function AdminPanel() {
                                     <h4 className="font-black text-gray-900 dark:text-white text-base">{payment.senderName}</h4>
                                     <p className="text-xs font-bold text-gray-500 dark:text-gray-400">حساب الطالب: {payment.userName}</p>
                                   </div>
+                                  
                                   <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
                                     payment.status === 'approved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' :
                                     payment.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400' :
@@ -1233,7 +1892,11 @@ export default function AdminPanel() {
                                   }`}>
                                     {payment.status === 'approved' ? 'تم القبول' : payment.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
                                   </span>
+                                  <button onClick={() => { setPaymentToDelete(payment.id); setDeletePaymentModalOpen(true); }} className="mr-2 text-rose-500 hover:text-rose-700 p-1 bg-rose-50 dark:bg-rose-950/30 rounded-lg" title="حذف الطلب">
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
                                 </div>
+                                
                                 
                                 <div className="space-y-1.5 mt-4">
                                   <div className="flex items-center gap-2 text-xs">
@@ -1285,6 +1948,209 @@ export default function AdminPanel() {
                                   {payment.rejectionReason}
                                 </div>
                               )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : activeTab === 'courses' ? (
+                <div className="space-y-6 p-6 bg-gray-50/30 dark:bg-[#0D0D12]/30">
+                  {/* Courses Search & Filters */}
+                  <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white dark:bg-[#1A1A24] p-4 rounded-2xl border border-gray-100 dark:border-[#2D2D3D] shadow-sm">
+                    <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto items-center">
+                      <div className="relative w-full md:w-[300px]">
+                        <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          value={coursesSearchQuery}
+                          onChange={(e) => setCoursesSearchQuery(e.target.value)}
+                          placeholder="ابحث باسم الكورس، المعلم أو المادة..."
+                          className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pr-10 pl-4 py-2.5 outline-none focus:border-[#00B4D8] focus:ring-2 focus:ring-[#00B4D8]/20 text-sm transition-all text-gray-900 dark:text-white font-bold"
+                        />
+                      </div>
+                      
+                      <div className="relative w-full md:w-[200px]">
+                        <Filter className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <select
+                          value={coursesGradeFilter}
+                          onChange={(e) => setCoursesGradeFilter(e.target.value)}
+                          className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pr-10 pl-4 py-2.5 outline-none focus:border-[#00B4D8] text-sm transition-all text-gray-700 dark:text-gray-300 font-bold appearance-none cursor-pointer"
+                        >
+                          <option value="all">كل الصفوف الدراسية</option>
+                          <option value="الأول الإعدادي">الأول الإعدادي</option>
+                          <option value="الثاني الإعدادي">الثاني الإعدادي</option>
+                          <option value="الثالث الإعدادي">الثالث الإعدادي</option>
+                          <option value="الأول الثانوي">الأول الثانوي</option>
+                          <option value="الثاني الثانوي">الثاني الثانوي</option>
+                          <option value="الثالث الثانوي">الثالث الثانوي</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <div className="bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] border border-[#00B4D8]/20 dark:border-[#D4AF37]/20 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1">
+                        <Book className="w-4 h-4" />
+                        إجمالي الكورسات: {courses.length}
+                      </div>
+                      <div className="bg-emerald-500/10 text-emerald-500 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1">
+                        <Check className="w-4 h-4" />
+                        النشطة منها: {courses.filter(c => c.isActive !== false).length}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Courses List Cards */}
+                  {courses.filter(course => {
+                    const matchesSearch = (course.title || '').toLowerCase().includes(coursesSearchQuery.toLowerCase()) || 
+                                          (course.teacherName || '').toLowerCase().includes(coursesSearchQuery.toLowerCase()) ||
+                                          (course.subject || '').toLowerCase().includes(coursesSearchQuery.toLowerCase());
+                    const matchesGrade = coursesGradeFilter === 'all' || course.grade === coursesGradeFilter;
+                    return matchesSearch && matchesGrade;
+                  }).length === 0 ? (
+                    <div className="bg-white dark:bg-[#1A1A24] p-16 text-center text-gray-400 dark:text-gray-500 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] font-bold text-sm">
+                      <div className="flex flex-col items-center justify-center gap-3">
+                        <div className="w-16 h-16 rounded-3xl bg-gray-50 dark:bg-[#0D0D12] border border-dashed border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-400">
+                          <Book className="w-8 h-8" />
+                        </div>
+                        <span>لا توجد كورسات مطابقة لخيارات البحث المحددة حالياً</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {courses.filter(course => {
+                        const matchesSearch = (course.title || '').toLowerCase().includes(coursesSearchQuery.toLowerCase()) || 
+                                              (course.teacherName || '').toLowerCase().includes(coursesSearchQuery.toLowerCase()) ||
+                                              (course.subject || '').toLowerCase().includes(coursesSearchQuery.toLowerCase());
+                        const matchesGrade = coursesGradeFilter === 'all' || course.grade === coursesGradeFilter;
+                        return matchesSearch && matchesGrade;
+                      }).map((course) => (
+                        <div 
+                          key={course.id}
+                          className="bg-white dark:bg-[#1A1A24] rounded-3xl border border-gray-150 dark:border-[#2D2D3D] shadow-sm overflow-hidden flex flex-col justify-between hover:shadow-md transition-all relative group"
+                        >
+                          {/* Course Thumbnail & Status Banner */}
+                          <div className="relative h-44 bg-gray-100 dark:bg-[#0D0D12] overflow-hidden">
+                            {course.imageUrl ? (
+                              <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-gray-300 dark:text-gray-700 bg-gradient-to-br from-[#00B4D8]/10 to-purple-500/10">
+                                <BookOpen className="w-12 h-12" />
+                              </div>
+                            )}
+                            
+                            {/* Status Badge */}
+                            <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                              {course.isActive !== false ? (
+                                <span className="bg-emerald-500 text-white px-2.5 py-1 rounded-full text-[10px] font-black shadow-lg shadow-emerald-500/10 flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                                  نشط ومتاح للطلاب
+                                </span>
+                              ) : (
+                                <span className="bg-red-500 text-white px-2.5 py-1 rounded-full text-[10px] font-black shadow-lg shadow-red-500/10 flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                                  ملغى / غير نشط
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Price Tag */}
+                            <div className="absolute bottom-3 left-3 bg-gray-900/80 backdrop-blur-sm text-white px-3 py-1 rounded-xl text-xs font-black font-mono">
+                              {course.price || 0} ج.م
+                            </div>
+                          </div>
+
+                          {/* Content */}
+                          <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+                            <div>
+                              {/* Subject & Grade Badges */}
+                              <div className="flex flex-wrap gap-1.5 mb-2">
+                                <span className="bg-blue-50 dark:bg-blue-950/30 text-[#00B4D8] px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                  {course.subject || 'مادة عامة'}
+                                </span>
+                                <span className="bg-purple-50 dark:bg-purple-950/30 text-purple-500 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                  {course.grade}
+                                </span>
+                              </div>
+
+                              <h3 className="text-base font-black text-gray-900 dark:text-white leading-snug line-clamp-1 mb-1">
+                                {course.title}
+                              </h3>
+                              
+                              <p className="text-xs text-gray-400 dark:text-gray-500 font-bold line-clamp-2">
+                                {course.description || 'لا يوجد وصف لهذا الكورس'}
+                              </p>
+                            </div>
+
+                            <div className="border-t border-gray-100 dark:border-[#2D2D3D] pt-3 space-y-3">
+                              {/* Teacher Info */}
+                              <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-5 h-5 bg-[#00B4D8]/10 text-[#00B4D8] rounded-full flex items-center justify-center">
+                                    <UserIcon className="w-3 h-3" />
+                                  </div>
+                                  <span>الأستاذ: <span className="text-gray-700 dark:text-gray-300 font-black">{course.teacherName || 'غير محدد'}</span></span>
+                                </div>
+                                
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCourseForStudents(course)}
+                                  className="text-[#00B4D8] hover:underline cursor-pointer flex items-center gap-1 bg-[#00B4D8]/5 hover:bg-[#00B4D8]/10 px-2 py-1 rounded-lg"
+                                >
+                                  <Users className="w-3.5 h-3.5" />
+                                  <span>الطلاب: <span className="font-mono font-black">{course.enrolledStudents || 0}</span></span>
+                                </button>
+                              </div>
+
+                              {/* Action Buttons */}
+                              <div className="grid grid-cols-2 gap-2 pt-1">
+                                {/* Toggle Status */}
+                                <button
+                                  type="button"
+                                  disabled={updatingCourseId === course.id}
+                                  onClick={() => handleToggleCourseActive(course.id, course.isActive !== false)}
+                                  className={`py-2 px-3 rounded-xl text-xs font-black transition-colors flex items-center justify-center gap-1 border cursor-pointer ${
+                                    course.isActive !== false
+                                      ? 'bg-red-50 text-red-500 border-red-100 hover:bg-red-100 dark:bg-red-950/20 dark:border-red-950/40 dark:text-red-400 font-black'
+                                      : 'bg-emerald-500 text-white border-transparent hover:bg-emerald-600 font-black'
+                                  }`}
+                                >
+                                  {updatingCourseId === course.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : course.isActive !== false ? (
+                                    <>
+                                      <EyeOff className="w-3.5 h-3.5" />
+                                      إلغاء التفعيل
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Eye className="w-3.5 h-3.5" />
+                                      تفعيل الكورس
+                                    </>
+                                  )}
+                                </button>
+
+                                {/* Edit Course details */}
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCourseForEdit(course)}
+                                  className="py-2 px-3 bg-gray-100 dark:bg-[#2D2D3D] text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#3D3D52] rounded-xl text-xs font-black transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                  تعديل الكورس
+                                </button>
+                              </div>
+
+                              {/* Danger Delete course */}
+                              <button
+                                type="button"
+                                onClick={() => setCourseToDelete(course)}
+                                className="w-full py-1.5 text-center text-red-400 hover:text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer border border-dashed border-red-500/10"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                حذف الكورس نهائياً من السيستم
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -1535,6 +2401,48 @@ export default function AdminPanel() {
           </AnimatePresence>
         )}
       </div>
+
+            {/* Image Viewer Modal */}
+      <AnimatePresence>
+        {viewImageModalOpen && selectedImageUrl && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setViewImageModalOpen(false)} />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative max-w-4xl w-full flex flex-col items-center justify-center z-10"
+              onClick={e => e.stopPropagation()}
+            >
+              <button 
+                onClick={() => setViewImageModalOpen(false)}
+                className="absolute -top-12 right-0 md:-right-12 text-white/70 hover:text-white bg-black/50 hover:bg-black p-2 rounded-full transition-all"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              <img src={selectedImageUrl} alt="Preview" className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
+              <div className="mt-4 flex gap-4">
+                <a 
+                  href={selectedImageUrl} 
+                  download="screenshot.jpg" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-[#00B4D8] text-white font-bold rounded-lg hover:bg-[#0096B4] transition-colors flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  تحميل الصورة
+                </a>
+                <button
+                  onClick={() => setViewImageModalOpen(false)}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Payment Rejection Modal */}
       <AnimatePresence>
@@ -1828,6 +2736,12 @@ export default function AdminPanel() {
                   <label className="text-xs font-bold text-gray-500 block mb-1">كلمة المرور (إن وجدت)</label>
                   <input type="text" value={editFormData.password || ''} onChange={e => setEditFormData({...editFormData, password: e.target.value})} className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold" />
                 </div>
+                {selectedUser.role === 'student' && (
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">رصيد المحفظة (ج.م)</label>
+                    <input type="number" min="0" step="any" value={editFormData.balance !== undefined ? editFormData.balance : ''} onChange={e => setEditFormData({...editFormData, balance: e.target.value ? Number(e.target.value) : 0})} className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold" />
+                  </div>
+                )}
                 <button type="submit" disabled={isSaving} className="w-full bg-[#00B4D8] dark:bg-[#D4AF37] text-white font-bold py-3 rounded-xl hover:bg-opacity-90 transition-all mt-4 flex justify-center items-center gap-2 shadow-lg">
                   {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'حفظ التعديلات'}
                 </button>
@@ -2047,7 +2961,7 @@ export default function AdminPanel() {
                       {/* Section 1: User Profile Details */}
                       <div className="bg-slate-50 p-4 rounded-xl border border-slate-150">
                         <h4 className="text-xs font-black text-slate-400 mb-3 border-b border-slate-200 pb-1 flex items-center gap-1.5">
-                          <User className="w-3.5 h-3.5 text-slate-400" />
+                          <UserIcon className="w-3.5 h-3.5 text-slate-400" />
                           البيانات الشخصية والأساسية
                         </h4>
                         
@@ -2172,8 +3086,8 @@ export default function AdminPanel() {
                             <span className="text-base font-black text-[#00B4D8]">92%</span>
                           </div>
                           <div className="bg-white p-2.5 rounded-lg border border-slate-100 shadow-sm">
-                            <span className="text-[10px] text-slate-400 block mb-1">نقاط التميز</span>
-                            <span className="text-base font-black text-purple-600">340 نقطة</span>
+                            <span className="text-[10px] text-slate-400 block mb-1">رصيد المحفظة</span>
+                            <span className="text-base font-black text-purple-600">0 ج.م</span>
                           </div>
                         </div>
                       </div>
@@ -2390,8 +3304,8 @@ export default function AdminPanel() {
                   <span className="text-lg font-black text-black">92%</span>
                 </div>
                 <div className="bg-white p-3 rounded-lg border border-slate-200">
-                  <span className="text-xs text-slate-500 block mb-1">نقاط التميز الأكاديمي</span>
-                  <span className="text-lg font-black text-black">340 نقطة</span>
+                  <span className="text-xs text-slate-500 block mb-1">رصيد المحفظة</span>
+                  <span className="text-lg font-black text-black">0 ج.م</span>
                 </div>
               </div>
             </div>
@@ -2436,6 +3350,38 @@ export default function AdminPanel() {
         </div>
       )}
 
+            {/* Delete Payment Confirmation Modal */}
+      <AnimatePresence>
+        {deletePaymentModalOpen && paymentToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeletePaymentModalOpen(false)} />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-md relative z-10 shadow-2xl p-6">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Trash2 className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-black text-gray-900 dark:text-white mb-2">تأكيد الحذف</h3>
+                <p className="text-gray-500 dark:text-gray-400 text-sm font-bold">هل أنت متأكد من حذف هذا الطلب نهائياً؟ لا يمكن التراجع عن هذا الإجراء.</p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeletePaymentModalOpen(false)}
+                  className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 dark:bg-[#2D2D3D] dark:hover:bg-[#3D3D4D] text-gray-700 dark:text-gray-300 font-bold rounded-xl transition-colors"
+                >
+                  إلغاء
+                </button>
+                <button
+                  onClick={handleDeletePayment}
+                  className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors"
+                >
+                  حذف الطلب
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {deleteModalOpen && userToDelete && (
@@ -2461,6 +3407,218 @@ export default function AdminPanel() {
                   className="flex-1 py-3 rounded-xl font-bold bg-red-500 text-white hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
                 >
                   تأكيد الحذف
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Course Enrolled Students Modal */}
+      <AnimatePresence>
+        {selectedCourseForStudents && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedCourseForStudents(null)} />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-3xl relative z-10 shadow-2xl p-6 overflow-hidden flex flex-col max-h-[85vh] text-right" dir="rtl">
+              <div className="flex justify-between items-center pb-4 border-b border-gray-100 dark:border-[#2D2D3D] mb-4 shrink-0">
+                <div>
+                  <h3 className="text-xl font-black text-gray-900 dark:text-white flex items-center gap-2">
+                    <Users className="w-6 h-6 text-[#00B4D8] dark:text-[#D4AF37]" />
+                    الطلاب المشتركين في الكورس
+                  </h3>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 font-bold mt-1">كورس: <span className="text-[#00B4D8] dark:text-[#D4AF37]">{selectedCourseForStudents.title}</span></p>
+                </div>
+                <button onClick={() => setSelectedCourseForStudents(null)} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-1">
+                {(() => {
+                  const enrolledList = users.filter(u => (selectedCourseForStudents.enrolledStudentIds || []).includes(u.id));
+                  if (enrolledList.length === 0) {
+                    return (
+                      <div className="py-12 text-center text-gray-400 font-bold">
+                        <p>لا يوجد أي طلاب مشتركين في هذا الكورس حالياً.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="space-y-3">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-right border-collapse">
+                          <thead>
+                            <tr className="border-b border-gray-100 dark:border-[#2D2D3D] text-xs text-gray-400 font-bold">
+                              <th className="pb-3 px-2">الطالب</th>
+                              <th className="pb-3 px-2">البريد الإلكتروني</th>
+                              <th className="pb-3 px-2">رقم الهاتف</th>
+                              <th className="pb-3 px-2">الصف</th>
+                              <th className="pb-3 px-2 text-center">العمليات</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50 dark:divide-[#2D2D3D]/50 text-sm">
+                            {enrolledList.map(student => (
+                              <tr key={student.id} className="hover:bg-gray-50/50 dark:hover:bg-[#0D0D12]/30 transition-colors">
+                                <td className="py-3 px-2 font-black text-gray-900 dark:text-white">{student.name}</td>
+                                <td className="py-3 px-2 text-gray-500 dark:text-gray-400 font-medium">{student.email}</td>
+                                <td className="py-3 px-2 text-gray-500 dark:text-gray-400 font-mono" dir="ltr">{student.phone}</td>
+                                <td className="py-3 px-2 text-purple-500 font-bold">{student.grade || 'غير محدد'}</td>
+                                <td className="py-3 px-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveStudentFromCourse(student.id, selectedCourseForStudents)}
+                                    className="px-2.5 py-1 bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-950/20 dark:text-red-400 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                                  >
+                                    إلغاء الاشتراك
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Course Details Modal */}
+      <AnimatePresence>
+        {selectedCourseForEdit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedCourseForEdit(null)} />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-lg relative z-10 shadow-2xl p-6 text-right" dir="rtl">
+              <div className="flex justify-between items-center pb-4 border-b border-gray-100 dark:border-[#2D2D3D] mb-4 shrink-0">
+                <h3 className="text-xl font-black text-gray-900 dark:text-white flex items-center gap-2">
+                  <Edit3 className="w-6 h-6 text-[#00B4D8] dark:text-[#D4AF37]" />
+                  تعديل تفاصيل الكورس (مسؤول)
+                </h3>
+                <button onClick={() => setSelectedCourseForEdit(null)} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleEditCourseSubmit} className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-400 block mb-1">عنوان الكورس</label>
+                  <input
+                    type="text"
+                    value={selectedCourseForEdit.title || ''}
+                    onChange={e => setSelectedCourseForEdit({...selectedCourseForEdit, title: e.target.value})}
+                    className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2.5 outline-none focus:border-[#00B4D8] text-sm font-bold text-gray-900 dark:text-white"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-400 block mb-1">وصف الكورس</label>
+                  <textarea
+                    value={selectedCourseForEdit.description || ''}
+                    onChange={e => setSelectedCourseForEdit({...selectedCourseForEdit, description: e.target.value})}
+                    rows={3}
+                    className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2.5 outline-none focus:border-[#00B4D8] text-sm font-bold text-gray-900 dark:text-white"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 block mb-1">المادة الدراسية</label>
+                    <input
+                      type="text"
+                      value={selectedCourseForEdit.subject || ''}
+                      onChange={e => setSelectedCourseForEdit({...selectedCourseForEdit, subject: e.target.value})}
+                      className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2.5 outline-none focus:border-[#00B4D8] text-sm font-bold text-gray-900 dark:text-white"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 block mb-1">الصف الدراسي</label>
+                    <select
+                      value={selectedCourseForEdit.grade || ''}
+                      onChange={e => setSelectedCourseForEdit({...selectedCourseForEdit, grade: e.target.value})}
+                      className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2.5 outline-none focus:border-[#00B4D8] text-sm font-bold text-gray-700 dark:text-gray-300 cursor-pointer"
+                    >
+                      <option value="الأول الإعدادي">الأول الإعدادي</option>
+                      <option value="الثاني الإعدادي">الثاني الإعدادي</option>
+                      <option value="الثالث الإعدادي">الثالث الإعدادي</option>
+                      <option value="الأول الثانوي">الأول الثانوي</option>
+                      <option value="الثاني الثانوي">الثاني الثانوي</option>
+                      <option value="الثالث الثانوي">الثالث الثانوي</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-400 block mb-1">سعر الكورس (ج.م)</label>
+                  <input
+                    type="number"
+                    value={selectedCourseForEdit.price || 0}
+                    onChange={e => setSelectedCourseForEdit({...selectedCourseForEdit, price: Number(e.target.value)})}
+                    className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2.5 outline-none focus:border-[#00B4D8] text-sm font-bold text-gray-900 dark:text-white font-mono text-left"
+                    required
+                    min={0}
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-3 border-t border-gray-100 dark:border-[#2D2D3D]">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCourseForEdit(null)}
+                    className="flex-1 py-3 bg-gray-100 dark:bg-[#2D2D3D] text-gray-600 dark:text-gray-300 font-bold rounded-xl transition-colors cursor-pointer"
+                  >
+                    إلغاء الإجراء
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 bg-[#00B4D8] text-white font-bold rounded-xl hover:bg-[#0096B4] transition-colors cursor-pointer"
+                  >
+                    حفظ التغييرات
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Course Confirmation Modal */}
+      <AnimatePresence>
+        {courseToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setCourseToDelete(null)} />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-md relative z-10 shadow-2xl p-6 text-right" dir="rtl">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertTriangle className="w-8 h-8" />
+                </div>
+                <h3 className="text-xl font-black text-gray-900 dark:text-white mb-2">تأكيد حذف الكورس نهائياً</h3>
+                <p className="text-gray-500 dark:text-gray-400 text-sm font-bold leading-relaxed">
+                  هل أنت متأكد من رغبتك في حذف الكورس <span className="text-[#00B4D8] dark:text-[#D4AF37] font-black">"{courseToDelete.title}"</span> للأبد؟
+                </p>
+                <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 p-3 rounded-xl font-bold leading-relaxed mt-3">
+                  ⚠️ تنبيه: هذا الإجراء سيمسح الكورس ومقاطع الفيديو وكل تفاصيله من السيرفر. لن يتمكن أي طالب من مشاهدته بعد الآن حتى وإن كان قد اشترك فيه مسبقاً!
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setCourseToDelete(null)} 
+                  className="flex-1 py-3 rounded-xl font-bold bg-gray-100 dark:bg-[#2D2D3D] text-gray-700 dark:text-gray-300 hover:bg-gray-200 transition-colors cursor-pointer"
+                >
+                  تراجع
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => executeDeleteCourse(courseToDelete.id)} 
+                  className="flex-1 py-3 rounded-xl font-bold bg-red-500 text-white hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20 cursor-pointer"
+                >
+                  نعم، احذف الكورس
                 </button>
               </div>
             </motion.div>
