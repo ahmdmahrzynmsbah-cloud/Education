@@ -25,6 +25,7 @@ import QuickNotes from './QuickNotes';
 import LiveClassroom from './LiveClassroom';
 import ComprehensiveAnalytics from './ComprehensiveAnalytics';
 import TeachersSearchList from './TeachersSearchList';
+import { usePlatformSettings } from '../context/PlatformSettingsContext';
 
 const MOCK_TEACHER_STATS = [
   { id: 1, title: 'إجمالي الطلاب', value: '1,240', icon: Users, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
@@ -39,6 +40,7 @@ const MOCK_PARENT_STATS = [
 ];
 
 export default function Dashboard() {
+  const { settings } = usePlatformSettings();
   const [activeTab, setActiveTab] = useState('home');
   const [searchParams, setSearchParams] = useSearchParams();
   const tabQuery = searchParams.get('tab');
@@ -1655,10 +1657,14 @@ export default function Dashboard() {
       {/* Sidebar */}
       <aside className="w-full md:w-64 bg-white dark:bg-[#1A1A24] border-l border-gray-200 dark:border-[#2D2D3D] flex flex-col shrink-0 shadow-sm z-10 hidden md:flex h-full overflow-hidden">
         <div className="h-20 border-b border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center gap-2.5 shrink-0">
-            <div className="w-8 h-8 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-lg text-white shadow-md shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 border border-white/10 select-none">
-                T
-            </div>
-            <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] bg-clip-text text-transparent select-none inline-block py-1 px-0.5 leading-normal">Teachland</span>
+            {settings.logoUrl ? (
+              <img src={settings.logoUrl} alt="Logo" className="w-8 h-8 object-contain rounded-xl shadow-md" />
+            ) : (
+              <div className="w-8 h-8 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-lg text-white shadow-md shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 border border-white/10 select-none">
+                  {settings.logoChar}
+              </div>
+            )}
+            <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] bg-clip-text text-transparent select-none inline-block py-1 px-0.5 leading-normal">{settings.platformName}</span>
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto min-h-0">

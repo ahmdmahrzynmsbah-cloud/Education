@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, updateDoc, doc, deleteDoc, getDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, addDoc, query, orderBy } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../lib/firebase';
 import { 
   Users, BookOpen, Shield, Trash2, Edit2, Edit3, Loader2, CheckCircle2, 
   Eye, EyeOff, Printer, X, Calendar, User as UserIcon, Mail, Phone, Lock, 
@@ -587,7 +588,24 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
   const [updatingCourseId, setUpdatingCourseId] = useState<string | null>(null);
 
   // Platform dynamic settings state
-  const [platformSettings, setPlatformSettings] = useState({
+  const [platformSettings, setPlatformSettings] = useState<{
+    platformName: string;
+    logoChar: string;
+    logoUrl?: string;
+    heroTitle: string;
+    heroSubtitle: string;
+    showGradesSection: boolean;
+    showSubjectsSection: boolean;
+    showFeaturesSection: boolean;
+    showFaqSection: boolean;
+    gradesTitle: string;
+    gradesSubtitle: string;
+    subjectsTitle: string;
+    subjectsSubtitle: string;
+    faqTitle: string;
+    faqSubtitle: string;
+    vodafoneCashNumber: string;
+  }>({
     platformName: 'Teachland',
     logoChar: 'T',
     heroTitle: 'مدرستك كلها في جيبك',
@@ -617,6 +635,9 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
   const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  
+  // Settings upload
+  const [logoFile, setLogoFile] = useState<File | null>(null);
   const [processingPaymentId, setProcessingPaymentId] = useState<string | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -774,6 +795,52 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
     ), { duration: 4000 });
   };
 
+  const handleSaveSettings = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setSavingSettings(true);
+    const formData = new FormData(e.currentTarget);
+    
+    let logoUrl = platformSettings.logoUrl;
+    
+    try {
+      if (logoFile) {
+        toast.success("جاري رفع شعار المنصة...");
+        const storageRef = ref(storage, `settings/platform-logo-${Date.now()}`);
+        await uploadBytes(storageRef, logoFile);
+        logoUrl = await getDownloadURL(storageRef);
+      }
+
+      const updated = {
+        platformName: formData.get('platformName') as string || platformSettings.platformName,
+        logoChar: formData.get('logoChar') as string || platformSettings.logoChar,
+        logoUrl: logoUrl,
+        heroTitle: formData.get('heroTitle') as string || platformSettings.heroTitle,
+        heroSubtitle: formData.get('heroSubtitle') as string || platformSettings.heroSubtitle,
+        showGradesSection: formData.get('showGradesSection') === 'true',
+        showSubjectsSection: formData.get('showSubjectsSection') === 'true',
+        showFeaturesSection: formData.get('showFeaturesSection') === 'true',
+        showFaqSection: formData.get('showFaqSection') === 'true',
+        gradesTitle: formData.get('gradesTitle') as string || platformSettings.gradesTitle,
+        gradesSubtitle: formData.get('gradesSubtitle') as string || platformSettings.gradesSubtitle,
+        subjectsTitle: formData.get('subjectsTitle') as string || platformSettings.subjectsTitle,
+        subjectsSubtitle: formData.get('subjectsSubtitle') as string || platformSettings.subjectsSubtitle,
+        faqTitle: formData.get('faqTitle') as string || platformSettings.faqTitle,
+        faqSubtitle: formData.get('faqSubtitle') as string || platformSettings.faqSubtitle,
+        vodafoneCashNumber: formData.get('vodafoneCashNumber') as string || platformSettings.vodafoneCashNumber,
+      };
+
+      await setDoc(doc(db, 'platform_settings', 'config'), updated);
+      setPlatformSettings(updated);
+      setLogoFile(null);
+      toast.success("تم حفظ إعدادات المنصة وتحديثها بنجاح! ✨");
+    } catch (err) {
+      console.error("Error saving settings:", err);
+      toast.error("فشل في حفظ إعدادات المنصة");
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   const handleApproveStudent = async (studentId: string, name: string) => {
     try {
       await updateDoc(doc(db, 'users', studentId), {
@@ -800,39 +867,6 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
     }
   };
 
-  const handleSaveSettings = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setSavingSettings(true);
-    const formData = new FormData(e.currentTarget);
-    const updated = {
-      platformName: formData.get('platformName') as string || platformSettings.platformName,
-      logoChar: formData.get('logoChar') as string || platformSettings.logoChar,
-      heroTitle: formData.get('heroTitle') as string || platformSettings.heroTitle,
-      heroSubtitle: formData.get('heroSubtitle') as string || platformSettings.heroSubtitle,
-      showGradesSection: formData.get('showGradesSection') === 'true',
-      showSubjectsSection: formData.get('showSubjectsSection') === 'true',
-      showFeaturesSection: formData.get('showFeaturesSection') === 'true',
-      showFaqSection: formData.get('showFaqSection') === 'true',
-      gradesTitle: formData.get('gradesTitle') as string || platformSettings.gradesTitle,
-      gradesSubtitle: formData.get('gradesSubtitle') as string || platformSettings.gradesSubtitle,
-      subjectsTitle: formData.get('subjectsTitle') as string || platformSettings.subjectsTitle,
-      subjectsSubtitle: formData.get('subjectsSubtitle') as string || platformSettings.subjectsSubtitle,
-      faqTitle: formData.get('faqTitle') as string || platformSettings.faqTitle,
-      faqSubtitle: formData.get('faqSubtitle') as string || platformSettings.faqSubtitle,
-      vodafoneCashNumber: formData.get('vodafoneCashNumber') as string || platformSettings.vodafoneCashNumber,
-    };
-
-    try {
-      await setDoc(doc(db, 'platform_settings', 'config'), updated);
-      setPlatformSettings(updated);
-      toast.success("تم حفظ إعدادات المنصة وتحديثها بنجاح! ✨");
-    } catch (err) {
-      console.error("Error saving settings:", err);
-      toast.error("فشل في حفظ إعدادات المنصة");
-    } finally {
-      setSavingSettings(false);
-    }
-  };
 
 
   const handleDeletePayment = async () => {
@@ -1577,6 +1611,26 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                       className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2.5 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-sm"
                       required
                     />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">شعار المنصة (صورة)</label>
+                    <div className="flex items-center gap-3">
+                      {(logoFile || platformSettings.logoUrl) && (
+                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-100 flex items-center justify-center shrink-0 border border-gray-200 dark:border-[#2D2D3D]">
+                          <img 
+                            src={logoFile ? URL.createObjectURL(logoFile) : platformSettings.logoUrl} 
+                            alt="Logo preview" 
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
+                        className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-2 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-gray-300 text-xs file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#00B4D8]/10 file:text-[#00B4D8] hover:file:bg-[#00B4D8]/20 cursor-pointer"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

@@ -4,6 +4,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowRight, Lock, User, Phone, MapPin, School, BookOpen, GraduationCap, Users, Calendar, IdCard, Mail } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
+import { usePlatformSettings } from '../context/PlatformSettingsContext';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -267,7 +268,7 @@ export default function Auth() {
           </div>
           <h2 className="text-xl sm:text-2xl font-black mb-1.5 text-gray-900 dark:text-white">{isLogin ? 'تسجيل الدخول' : 'إنشاء حساب جديد'}</h2>
           <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm font-bold">
-            {isLogin ? 'أهلاً بك مرة أخرى في Teachland' : 'سجل بياناتك عشان تبدأ رحلتك التعليمية'}
+            {isLogin ? 'أهلاً بك مرة أخرى في {settings.platformName}' : 'سجل بياناتك عشان تبدأ رحلتك التعليمية'}
           </p>
         </div>
 

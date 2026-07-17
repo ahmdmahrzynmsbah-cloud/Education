@@ -400,12 +400,22 @@ export default function LiveClassroom({ userData }: LiveClassroomProps) {
           
           const { uploadChunkedFile } = await import('../lib/upload');
           
-          const recordedUrl = await uploadChunkedFile(file, (progress) => {
+          const uploadResult = await uploadChunkedFile(file, (progress) => {
             setRecordingProgress(progress);
           });
+          
+          let recordedUrl = uploadResult;
+          let bunnyVideoId = "";
+          
+          if (uploadResult.startsWith('bunny:')) {
+            bunnyVideoId = uploadResult.replace('bunny:', '');
+            // We can't use recordedUrl as a direct link, but maybe store a play-url 
+            recordedUrl = `/api/bunny/play-url/${bunnyVideoId}`; // Or another route to handle it
+          }
 
           await updateDoc(doc(db, 'live_streams', activeStream.id), {
             recordedUrl,
+            ...(bunnyVideoId ? { bunnyVideoId } : {}),
             recordingSummary: activeStream.description // simple summary
           });
           

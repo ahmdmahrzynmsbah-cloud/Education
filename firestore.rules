@@ -99,7 +99,8 @@ service cloud.firestore {
 
     // 14. Live Streams
     match /live_streams/{streamId} {
-      allow read, write: if isSignedIn();
+      allow read: if true;
+      allow write: if isSignedIn();
       
       match /chat/{msgId} {
         allow read, write: if isSignedIn();

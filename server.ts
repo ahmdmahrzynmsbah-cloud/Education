@@ -99,7 +99,7 @@ async function startServer() {
     } catch (err) {
       console.error("Error resolving library ID dynamically:", err);
     }
-    return '705459'; // Fallback
+    return process.env.BUNNY_LIBRARY_ID || '705459'; // Fallback
   }
 
   // Bunny Stream: Create Video
@@ -270,7 +270,7 @@ async function startServer() {
   });
 
   app.post('/api/upload-merge', express.json(), (req, res) => {
-    const { fileId, totalChunks, originalName } = req.body;
+    const { fileId, totalChunks, originalName, bunny } = req.body;
     const chunkDir = path.join(uploadDir, 'chunks', fileId);
     const finalFilename = Date.now() + '-' + Math.round(Math.random() * 1E9) + '-' + originalName.replace(/[^a-zA-Z0-9.]/g, '_');
     const finalPath = path.join(uploadDir, finalFilename);
@@ -291,7 +291,74 @@ async function startServer() {
       writeStream.end(async () => {
         fs.rmdirSync(chunkDir);
         await applyFaststart(finalPath);
-        res.json({ url: `/uploads/${finalFilename}` });
+        
+        if (bunny) {
+          try {
+            const apiKey = process.env.BUNNY_API_KEY || '859b2119-fcac-40bf-9d78e2104ae3-b4e1-4127';
+            const libraryId = await resolveLibraryId(apiKey);
+
+            // 1. Create Video on Bunny Stream
+            const createResponse = await fetch(`https://video.bunnycdn.com/library/${libraryId}/videos`, {
+              method: 'POST',
+              headers: {
+                'AccessKey': apiKey,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ title: originalName }),
+            });
+
+            if (!createResponse.ok) {
+              const errText = await createResponse.text();
+              throw new Error(`Failed to create video on Bunny: ${errText}`);
+            }
+
+            const createData = await createResponse.json() as any;
+            const videoId = createData.guid;
+
+            if (!videoId) {
+              throw new Error('No video GUID returned from Bunny.');
+            }
+
+            // 2. Upload file content to Bunny Stream
+            const fileStream = fs.createReadStream(finalPath);
+            const uploadResponse = await fetch(`https://video.bunnycdn.com/library/${libraryId}/videos/${videoId}`, {
+              method: 'PUT',
+              headers: {
+                'AccessKey': apiKey,
+                'Content-Type': 'application/octet-stream',
+              },
+              // Node 18+ fetch needs duplex: 'half' when body is a stream
+              ...( { duplex: 'half' } as any ),
+              body: fileStream as any,
+            });
+
+            if (!uploadResponse.ok) {
+              const errText = await uploadResponse.text();
+              throw new Error(`Failed to upload video content to Bunny: ${errText}`);
+            }
+
+            // Delete local temp file
+            fs.unlink(finalPath, (err) => {
+              if (err) console.error("Error deleting temp file:", err);
+            });
+
+            res.json({
+              success: true,
+              videoId: videoId,
+              url: `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`
+            });
+
+          } catch (error: any) {
+            console.error("Bunny Upload error:", error);
+            // Clean up temp file
+            if (fs.existsSync(finalPath)) {
+              fs.unlink(finalPath, (err) => {});
+            }
+            res.status(500).json({ error: error.message });
+          }
+        } else {
+          res.json({ url: `/uploads/${finalFilename}` });
+        }
       });
     } catch (err) {
       console.error(err);

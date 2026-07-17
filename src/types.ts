@@ -1,3 +1,22 @@
+export interface PlatformSettings {
+  platformName: string;
+  logoChar: string;
+  logoUrl?: string; // NEW!
+  heroTitle: string;
+  heroSubtitle: string;
+  showGradesSection: boolean;
+  showSubjectsSection: boolean;
+  showFeaturesSection: boolean;
+  showFaqSection: boolean;
+  gradesTitle: string;
+  gradesSubtitle: string;
+  subjectsTitle: string;
+  subjectsSubtitle: string;
+  faqTitle: string;
+  faqSubtitle: string;
+  vodafoneCashNumber: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -14,6 +33,7 @@ export interface User {
   teachingGrades?: string[];
   studentPhone?: string;
   balance?: number;
+  createdAt?: string;
 }
 
 export interface Course {

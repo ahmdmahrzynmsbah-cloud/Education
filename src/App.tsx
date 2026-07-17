@@ -11,6 +11,7 @@ import Dashboard from './components/Dashboard';
 import CourseDetails from './components/CourseDetails';
 import ExamPage from './components/ExamPage';
 import PageTransition from './components/PageTransition';
+import { PlatformSettingsProvider } from './context/PlatformSettingsContext';
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -32,8 +33,10 @@ function AnimatedRoutes() {
 
 export default function App() {
   return (
-    <Router>
-      <AnimatedRoutes />
-    </Router>
+    <PlatformSettingsProvider>
+      <Router>
+        <AnimatedRoutes />
+      </Router>
+    </PlatformSettingsProvider>
   );
 }

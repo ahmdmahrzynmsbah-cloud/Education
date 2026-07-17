@@ -8,11 +8,13 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 import PremiumFeaturesSection from './PremiumFeaturesSection';
+import { usePlatformSettings } from '../context/PlatformSettingsContext';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 
 export default function LandingPage() {
+  const { settings } = usePlatformSettings();
   const navigate = useNavigate();
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -115,31 +117,36 @@ export default function LandingPage() {
           
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 sm:w-11 sm:h-11 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-lg sm:text-xl text-white shadow-md shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 border border-white/10 select-none">
-                T
-              </div>
-              <span className="text-xl sm:text-2xl font-black tracking-tight bg-gradient-to-r from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] bg-clip-text text-transparent select-none inline-block py-1 px-0.5 leading-normal">Teachland</span>
+              {settings.logoUrl ? (
+                <img src={settings.logoUrl} alt="Logo" className="w-9 h-9 sm:w-11 sm:h-11 object-contain rounded-xl shadow-md" />
+              ) : (
+                <div className="w-9 h-9 sm:w-11 sm:h-11 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-lg sm:text-xl text-white shadow-md shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 border border-white/10 select-none">
+                  {settings.logoChar}
+                </div>
+        
+              )}
+              <span className="text-xl sm:text-2xl font-black tracking-tight bg-gradient-to-r from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] bg-clip-text text-transparent select-none inline-block py-1 px-0.5 leading-normal">{settings.platformName}</span>
             </div>
           </div>
 
+          
           <div className="hidden md:flex items-center gap-8 text-sm font-bold text-gray-600 dark:text-gray-300">
             <a href="#grades" className="hover:text-[#00B4D8] dark:text-[#D4AF37] transition-colors">الصفوف الدراسية</a>
             <a href="#subjects" className="hover:text-[#00B4D8] dark:text-[#D4AF37] transition-colors">المواد الدراسية</a>
             <a href="#how-it-works" className="hover:text-[#00B4D8] dark:text-[#D4AF37] transition-colors">مميزات المنصة</a>
-            
             <a href="#faq" className="hover:text-[#00B4D8] dark:text-[#D4AF37] transition-colors">الأسئلة الشائعة</a>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
             <ThemeToggle />
             {user ? (
-              <Link to="/dashboard" className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded-full font-bold text-xs sm:text-sm shadow-lg shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 hover:bg-[#0077B6] dark:bg-[#B8860B] hover:-translate-y-0.5 transition-all flex items-center gap-1 sm:gap-2">
+              <Link to="/dashboard" className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded-full font-bold text-xs sm:text-sm shadow-lg shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 hover:bg-[#0077B6] dark:hover:bg-[#B8860B] hover:-translate-y-0.5 transition-all flex items-center gap-1 sm:gap-2">
                 لوحة التحكم
               </Link>
             ) : (
               <>
                 <Link to="/login" className="text-xs sm:text-sm font-bold text-gray-600 dark:text-gray-300 hover:text-[#00B4D8] dark:text-[#D4AF37] transition-colors px-2 sm:px-4 py-2 hidden sm:block">تسجيل الدخول</Link>
-                <Link to="/register" className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded-full font-bold text-xs sm:text-sm shadow-lg shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 hover:bg-[#0077B6] dark:bg-[#B8860B] hover:-translate-y-0.5 transition-all flex items-center gap-1 sm:gap-2">
+                <Link to="/register" className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-4 sm:px-6 py-2 sm:py-2.5 rounded-full font-bold text-xs sm:text-sm shadow-lg shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 hover:bg-[#0077B6] dark:hover:bg-[#B8860B] hover:-translate-y-0.5 transition-all flex items-center gap-1 sm:gap-2">
                   إنشاء حساب
                 </Link>
               </>
@@ -164,13 +171,8 @@ export default function LandingPage() {
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 text-[#0077B6] dark:text-[#B8860B] mb-4 sm:mb-6 text-xs sm:text-sm font-bold">
               <Star className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-[#00B4D8] dark:fill-[#D4AF37] text-[#00B4D8] dark:text-[#D4AF37]" /> المنصة التعليمية الأسرع نمواً
             </div>
-            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-black leading-[1.2] sm:leading-[1.1] mb-4 sm:mb-6 text-gray-900 dark:text-white">
-              مدرستك كلها <br className="hidden sm:inline" />
-              في <span className="text-[#00B4D8] dark:text-[#D4AF37]">جيبك</span>
-            </h1>
-            <p className="text-sm sm:text-base md:text-lg text-gray-500 dark:text-gray-400 mb-6 sm:mb-8 max-w-lg leading-relaxed font-medium">
-              شرح مبسط في فيديوهات قصيرة، اختبارات ذكية، ومنافسات مع أصحابك. كل المواد اللي محتاجها من مكان واحد، وفي أي وقت.
-            </p>
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-black leading-[1.2] sm:leading-[1.1] mb-4 sm:mb-6 text-gray-900 dark:text-white">{settings.heroTitle}</h1>
+            <p className="text-sm sm:text-base md:text-lg text-gray-500 dark:text-gray-400 mb-6 sm:mb-8 max-w-lg leading-relaxed font-medium">{settings.heroSubtitle}</p>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
               {user ? (
                 <Link to="/dashboard" className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-6 sm:px-8 py-3 sm:py-4 rounded-full font-bold text-sm sm:text-lg shadow-xl shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:hover:bg-[#B8860B] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2">
@@ -463,7 +465,7 @@ export default function LandingPage() {
       </section>
 
       {/* How it works / Premium Features */}
-      <PremiumFeaturesSection />
+      {settings.showFeaturesSection && <PremiumFeaturesSection />}
 
       {/* FAQ Section */}
       <section id="faq" className="py-24 bg-gray-50 dark:bg-[#0D0D12]">
@@ -564,6 +566,7 @@ export default function LandingPage() {
         </div>
       </section>
 
+
       {/* Ultra-Premium Footer */}
       <footer className="bg-gray-50 dark:bg-[#0D0D12] pt-16 pb-8 border-t border-gray-200 dark:border-[#2D2D3D] text-gray-600 dark:text-gray-300">
         <div className="container mx-auto px-6 max-w-7xl">
@@ -571,13 +574,17 @@ export default function LandingPage() {
             {/* Column 1: Brand Info */}
             <div className="space-y-4">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-lg text-white shadow-md shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 border border-white/10 select-none">
-                  T
-                </div>
-                <span className="text-xl font-black tracking-tight bg-gradient-to-r from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] bg-clip-text text-transparent select-none inline-block py-1 px-0.5 leading-normal">Teachland</span>
+                {settings.logoUrl ? (
+                  <img src={settings.logoUrl} alt="Logo" className="w-9 h-9 object-contain rounded-xl shadow-md" />
+                ) : (
+                  <div className="w-9 h-9 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-lg text-white shadow-md shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 border border-white/10 select-none">
+                    {settings.logoChar}
+                  </div>
+                )}
+                <span className="text-xl font-black tracking-tight bg-gradient-to-r from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] bg-clip-text text-transparent select-none inline-block py-1 px-0.5 leading-normal">{settings.platformName}</span>
               </div>
               <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 leading-relaxed">
-                منصة Teachland تقدم تجربة تعلم تفاعلية متكاملة لطلاب المرحلتين الإعدادية والثانوية في مصر، تهدف لتقديم أفضل مستويات الشرح بطرق حديثة تناسب جميع الطلاب.
+                منصة {settings.platformName} تقدم تجربة تعلم تفاعلية متكاملة لطلاب المرحلتين الإعدادية والثانوية في مصر، تهدف لتقديم أفضل مستويات الشرح بطرق حديثة تناسب جميع الطلاب.
               </p>
               <div className="pt-2 flex items-center gap-3">
                 <a href="#" className="w-8 h-8 rounded-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:scale-110 transition-all">

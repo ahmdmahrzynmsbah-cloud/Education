@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
+import CourseStudentsTable from './CourseStudentsTable';
 
 export default function AdminCoursesPanel() {
   const [courses, setCourses] = useState<Course[]>([]);
@@ -101,27 +102,41 @@ export default function AdminCoursesPanel() {
     }
   };
 
-  const handleRemoveStudentFromCourse = async (studentId: string, course: Course) => {
-    if (!confirm('هل أنت متأكد من إلغاء اشتراك هذا الطالب وحذفه من الكورس؟')) return;
-
+  const handleRemoveStudentFromCourse = async (studentId: string | string[], course: Course) => {
     try {
-      const enrolledIds = (course.enrolledStudentIds || []).filter(id => id !== studentId);
-      const enrolledCount = Math.max(0, enrolledIds.length);
+      const studentIds = Array.isArray(studentId) ? studentId : [studentId];
+      const newEnrolledIds = (course.enrolledStudentIds || []).filter(id => !studentIds.includes(id));
+      const newEnrolledCount = Math.max(0, newEnrolledIds.length);
 
       await updateDoc(doc(db, 'courses', course.id), {
-        enrolledStudentIds: enrolledIds,
-        enrolledStudents: enrolledCount
+        enrolledStudentIds: newEnrolledIds,
+        enrolledStudents: newEnrolledCount
       });
 
       // Update local states
-      setCourses(prev => prev.map(c => c.id === course.id ? { ...c, enrolledStudentIds: enrolledIds, enrolledStudents: enrolledCount } : c));
-      setViewingStudents(prev => prev && prev.id === course.id ? { ...prev, enrolledStudentIds: enrolledIds, enrolledStudents: enrolledCount } : prev);
-      setEnrolledStudents(prev => prev.filter(u => u.id !== studentId));
+      setCourses(prev => prev.map(c => c.id === course.id ? { ...c, enrolledStudentIds: newEnrolledIds, enrolledStudents: newEnrolledCount } : c));
+      setViewingStudents(prev => prev && prev.id === course.id ? { ...prev, enrolledStudentIds: newEnrolledIds, enrolledStudents: newEnrolledCount } : prev);
+      setEnrolledStudents(prev => prev.filter(u => !studentIds.includes(u.id)));
 
-      toast.success('تم إلغاء اشتراك الطالب وحذفه من الكورس بنجاح');
+      toast.success(studentIds.length > 1 ? `تم إزالة ${studentIds.length} طالب من الكورس بنجاح` : 'تم إلغاء اشتراك الطالب وحذفه من الكورس بنجاح');
     } catch (err) {
       console.error('Error removing student:', err);
       toast.error('حدث خطأ أثناء حذف الطالب من الكورس');
+    }
+  };
+
+  const handleUpdateStudent = async (studentId: string, updates: Partial<User>) => {
+    try {
+      await updateDoc(doc(db, 'users', studentId), updates);
+      
+      // Update local states
+      setUsers(prev => prev.map(u => u.id === studentId ? { ...u, ...updates } : u));
+      setEnrolledStudents(prev => prev.map(u => u.id === studentId ? { ...u, ...updates } : u));
+      
+      toast.success('تم تحديث بيانات الطالب بنجاح');
+    } catch (err) {
+      console.error('Error updating student:', err);
+      toast.error('حدث خطأ أثناء تحديث بيانات الطالب');
     }
   };
 
@@ -189,85 +204,14 @@ export default function AdminCoursesPanel() {
           </div>
         </div>
 
-        {/* Search Student Bar */}
-        <div className="bg-white dark:bg-[#1A1A24] p-4 rounded-2xl border border-gray-150 dark:border-[#2D2D3D] shadow-sm">
-          <div className="relative w-full">
-            <span className="absolute inset-y-0 right-3 flex items-center text-gray-400">
-              <Search className="w-4 h-4" />
-            </span>
-            <input
-              type="text"
-              placeholder="ابحث عن طالب بالاسم، الهاتف، البريد، المحافظة أو المدرسة..."
-              value={studentSearchQuery}
-              onChange={(e) => setStudentSearchQuery(e.target.value)}
-              className="w-full pl-4 pr-10 py-2.5 rounded-xl text-xs bg-gray-50 dark:bg-[#0D0D12] text-gray-900 dark:text-white border border-gray-200 dark:border-[#2D2D3D] focus:ring-2 focus:ring-[#00B4D8] dark:focus:ring-[#D4AF37] transition-all font-bold outline-none"
-            />
-          </div>
+        <div className="h-[600px] mt-4">
+          <CourseStudentsTable 
+            students={enrolledStudents} 
+            course={viewingStudents} 
+            onRemoveStudent={handleRemoveStudentFromCourse}
+            onUpdateStudent={handleUpdateStudent}
+          />
         </div>
-
-        {/* Student Cards or Table Grid */}
-        {loadingStudents ? (
-          <div className="text-center py-24 bg-white dark:bg-[#1A1A24] rounded-3xl border border-gray-150 dark:border-[#2D2D3D] shadow-sm">
-            <div className="w-10 h-10 border-4 border-[#00B4D8] dark:border-[#D4AF37] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-xs text-gray-500 font-bold">جاري تحميل الطلاب...</p>
-          </div>
-        ) : filteredEnrolledStudents.length === 0 ? (
-          <div className="text-center py-20 bg-white dark:bg-[#1A1A24] rounded-3xl border border-gray-150 dark:border-[#2D2D3D] shadow-sm">
-            <UserX className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-            <p className="font-black text-sm text-gray-700 dark:text-gray-300">لا يوجد طلاب يطابقون خيارات البحث الحالية 👥</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredEnrolledStudents.map((student, index) => (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                key={student.id}
-                className="bg-white dark:bg-[#1A1A24] rounded-2xl border border-gray-150 dark:border-[#2D2D3D]/60 p-5 shadow-sm flex flex-col justify-between gap-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 text-[#00B4D8] dark:text-[#D4AF37] font-black text-sm flex items-center justify-center shrink-0">
-                      {index + 1}
-                    </div>
-                    <div>
-                      <h4 className="font-black text-sm text-gray-900 dark:text-white">{student.name}</h4>
-                      <p className="text-[11px] text-gray-400 font-bold mt-0.5 truncate max-w-[180px]">{student.email || 'بدون بريد إلكتروني'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 bg-gray-50 dark:bg-[#0D0D12] p-3 rounded-xl border border-gray-100 dark:border-[#2D2D3D]/40 text-right font-bold text-[10px]">
-                  <div>
-                    <span className="block text-gray-400 mb-0.5">الهاتف 📞</span>
-                    <span className="text-gray-800 dark:text-gray-200 block truncate" dir="ltr">{student.phone || '-'}</span>
-                  </div>
-                  <div>
-                    <span className="block text-gray-400 mb-0.5">المحافظة 📍</span>
-                    <span className="text-gray-800 dark:text-gray-200 block truncate">{student.governorate || '-'}</span>
-                  </div>
-                  <div>
-                    <span className="block text-gray-400 mb-0.5">المرحلة 🎓</span>
-                    <span className="text-gray-800 dark:text-gray-200 block truncate">{student.grade || '-'}</span>
-                  </div>
-                  <div>
-                    <span className="block text-gray-400 mb-0.5">المدرسة 🏫</span>
-                    <span className="text-gray-800 dark:text-gray-200 block truncate">{student.school || '-'}</span>
-                  </div>
-                </div>
-
-                {/* Remove Student Button */}
-                <button
-                  onClick={() => handleRemoveStudentFromCourse(student.id, viewingStudents)}
-                  className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-500 dark:bg-red-950/20 dark:hover:bg-red-900/30 dark:text-red-400 rounded-xl text-xs font-black transition-colors flex items-center justify-center gap-1.5 cursor-pointer border border-red-100/50 dark:border-red-900/20"
-                >
-                  <UserX className="w-4 h-4" />
-                  <span>إلغاء اشتراك الطالب وحذفه من الكورس</span>
-                </button>
-              </motion.div>
-            ))}
-          </div>
-        )}
       </div>
     );
   }

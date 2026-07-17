@@ -380,9 +380,16 @@ export default function CourseDetails() {
       setUploadProgress(0);
       setIsSubmitting(true);
       let uploadedVideoUrl = lessonVideoUrl;
+      let bunnyVideoId = "";
 
       if (videoFile) {
-        uploadedVideoUrl = await uploadChunkedFile(videoFile, setUploadProgress);
+        const result = await uploadChunkedFile(videoFile, setUploadProgress);
+        if (result.startsWith('bunny:')) {
+          bunnyVideoId = result.replace('bunny:', '');
+          uploadedVideoUrl = ''; // We use bunnyVideoId instead
+        } else {
+          uploadedVideoUrl = result;
+        }
       }
 
       const newLesson = {
@@ -390,6 +397,7 @@ export default function CourseDetails() {
         title: lessonTitle,
         description: lessonDesc,
         videoUrl: uploadedVideoUrl,
+        ...(bunnyVideoId ? { bunnyVideoId } : {}),
         order: lessons.length + 1,
         createdAt: new Date().toISOString()
       };
