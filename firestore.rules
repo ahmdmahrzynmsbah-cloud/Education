@@ -17,6 +17,12 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    function isTeacher() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+
     // 1. Users collection
     match /users/{userId} {
       allow read: if true;
@@ -28,15 +34,15 @@ service cloud.firestore {
     // 2. Courses collection
     match /courses/{courseId} {
       allow read: if true;
-      allow create: if isAdmin();
+      allow create: if isAdmin() || isTeacher();
       allow update: if isSignedIn(); 
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isTeacher();
     }
 
     // 3. Lessons collection
     match /lessons/{lessonId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isTeacher();
     }
 
     // 4. Course Progress collection
@@ -47,7 +53,7 @@ service cloud.firestore {
     // 5. Quizzes collection
     match /quizzes/{quizId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isTeacher();
     }
 
     // 6. Quiz Submissions collection
@@ -83,7 +89,7 @@ service cloud.firestore {
     // 11. Schedule Events collection
     match /schedule_events/{eventId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isTeacher();
     }
 
     // 12. Notes collection
@@ -99,7 +105,7 @@ service cloud.firestore {
     // 14. Live Streams
     match /live_streams/{streamId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isTeacher();
       
       match /{allSubcollections=**} {
         allow read: if true;
