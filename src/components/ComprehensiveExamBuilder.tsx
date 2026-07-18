@@ -5,11 +5,15 @@ import { X, Plus, Trash2, Save, Clock, BookOpen, AlertCircle, Sparkles } from "l
 import { doc, setDoc } from "firebase/firestore";
 import { toast } from "react-hot-toast";
 
+export type QuestionType = 'multiple_choice' | 'true_false' | 'essay';
+
 interface Question {
   id: string;
   text: string;
+  type?: QuestionType;
   options: string[];
   correctOptionIndex: number;
+  correctAnswer?: string;
   points: number;
   explanation?: string;
 }
@@ -75,11 +79,21 @@ export default function ComprehensiveExamBuilder({
     }
   }, [editingExamId, existingExamData, isOpen]);
 
-  const handleAddQuestion = () => {
+  const handleAddQuestion = (type: QuestionType = 'multiple_choice') => {
     const newId = `q_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    let newQuestion: Question = { id: newId, text: "", type, options: [], correctOptionIndex: 0, points: 1, explanation: "" };
+    
+    if (type === 'multiple_choice') {
+      newQuestion.options = ["", "", "", ""];
+    } else if (type === 'true_false') {
+      newQuestion.options = ["صح", "خطأ"];
+    } else if (type === 'essay') {
+      newQuestion.correctAnswer = "";
+    }
+
     setQuestions((prev) => [
       ...prev,
-      { id: newId, text: "", options: ["", "", "", ""], correctOptionIndex: 0, points: 1, explanation: "" },
+      newQuestion,
     ]);
   };
 
@@ -138,14 +152,21 @@ export default function ComprehensiveExamBuilder({
         toast.error(`يرجى كتابة نص السؤال رقم ${i + 1}`);
         return;
       }
-      if (!q.options || q.options.length === 0) {
-        toast.error(`يرجى إضافة خيارات للسؤال رقم ${i + 1}`);
-        return;
-      }
-      for (let o = 0; o < q.options.length; o++) {
-        const option = q.options[o];
-        if (typeof option !== "string" || !option.trim()) {
-          toast.error(`يرجى كتابة الخيار رقم ${o + 1} للسؤال رقم ${i + 1}`);
+      if (!q.type || q.type === 'multiple_choice') {
+        if (!q.options || q.options.length === 0) {
+          toast.error(`يرجى إضافة خيارات للسؤال رقم ${i + 1}`);
+          return;
+        }
+        for (let o = 0; o < q.options.length; o++) {
+          const option = q.options[o];
+          if (typeof option !== "string" || !option.trim()) {
+            toast.error(`يرجى كتابة الخيار رقم ${o + 1} للسؤال رقم ${i + 1}`);
+            return;
+          }
+        }
+      } else if (q.type === 'essay') {
+        if (!q.correctAnswer || !q.correctAnswer.trim()) {
+          toast.error(`يرجى كتابة الإجابة النموذجية للسؤال المقالي رقم ${i + 1}`);
           return;
         }
       }
@@ -338,14 +359,32 @@ export default function ComprehensiveExamBuilder({
                   <BookOpen className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37]" />
                   أسئلة الامتحان المضافة ({questions.length})
                 </h4>
-                <button
-                  type="button"
-                  onClick={handleAddQuestion}
-                  className="px-4 py-2 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 rounded-xl text-xs font-black transition-all flex items-center gap-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  إضافة سؤال جديد
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuestion('multiple_choice')}
+                    className="px-3 py-2 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 rounded-xl text-xs font-black transition-all flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    اختيار من متعدد
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuestion('true_false')}
+                    className="px-3 py-2 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 rounded-xl text-xs font-black transition-all flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    صح وخطأ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuestion('essay')}
+                    className="px-3 py-2 bg-[#00B4D8]/10 text-[#00B4D8] dark:bg-[#D4AF37]/10 dark:text-[#D4AF37] hover:bg-[#00B4D8]/20 rounded-xl text-xs font-black transition-all flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    سؤال مقالي
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-6">
@@ -378,40 +417,85 @@ export default function ComprehensiveExamBuilder({
                       />
                     </div>
 
-                    {/* Options Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {q.options.map((opt, oIdx) => (
-                        <div key={oIdx} className="space-y-1">
-                          <label className={`text-[10px] font-bold ${q.correctOptionIndex === oIdx ? "text-green-500" : "text-gray-400"}`}>
-                            الخيار رقم {oIdx + 1} {q.correctOptionIndex === oIdx ? "(الإجابة الصحيحة ✅)" : ""}
-                          </label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={opt}
-                              onChange={(e) => handleUpdateOption(qIdx, oIdx, e.target.value)}
-                              placeholder={`الخيار ${oIdx + 1}`}
-                              className={`w-full p-2.5 bg-gray-50 dark:bg-[#222230] border rounded-xl text-xs font-bold text-gray-900 dark:text-white focus:outline-none ${
-                                q.correctOptionIndex === oIdx
-                                  ? "border-green-500 focus:border-green-600"
-                                  : "border-gray-100 dark:border-transparent focus:border-[#00B4D8] dark:focus:border-[#D4AF37]"
-                              }`}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateQuestionField(qIdx, "correctOptionIndex", oIdx)}
-                              className={`px-3 rounded-xl text-[10px] font-black transition-all border ${
-                                q.correctOptionIndex === oIdx
-                                  ? "bg-green-500 border-green-500 text-white"
-                                  : "bg-gray-50 dark:bg-[#222230] border-gray-100 dark:border-[#2D2D3D] text-gray-500 hover:bg-gray-100"
-                              }`}
-                            >
-                              صحيحة
-                            </button>
+                    {/* Options Grid based on question type */}
+                    {(!q.type || q.type === 'multiple_choice') && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {q.options.map((opt, oIdx) => (
+                          <div key={oIdx} className="space-y-1">
+                            <label className={`text-[10px] font-bold ${q.correctOptionIndex === oIdx ? "text-green-500" : "text-gray-400"}`}>
+                              الخيار رقم {oIdx + 1} {q.correctOptionIndex === oIdx ? "(الإجابة الصحيحة ✅)" : ""}
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={opt}
+                                onChange={(e) => handleUpdateOption(qIdx, oIdx, e.target.value)}
+                                placeholder={`الخيار ${oIdx + 1}`}
+                                className={`w-full p-2.5 bg-gray-50 dark:bg-[#222230] border rounded-xl text-xs font-bold text-gray-900 dark:text-white focus:outline-none ${
+                                  q.correctOptionIndex === oIdx
+                                    ? "border-green-500 focus:border-green-600"
+                                    : "border-gray-100 dark:border-transparent focus:border-[#00B4D8] dark:focus:border-[#D4AF37]"
+                                }`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateQuestionField(qIdx, "correctOptionIndex", oIdx)}
+                                className={`px-3 rounded-xl text-[10px] font-black transition-all border ${
+                                  q.correctOptionIndex === oIdx
+                                    ? "bg-green-500 border-green-500 text-white"
+                                    : "bg-gray-50 dark:bg-[#222230] border-gray-100 dark:border-[#2D2D3D] text-gray-500 hover:bg-gray-100"
+                                }`}
+                              >
+                                صحيحة
+                              </button>
+                            </div>
                           </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {q.type === 'true_false' && (
+                      <div className="flex items-center gap-4">
+                        <label className="text-[10px] font-bold text-gray-400 block mb-2 w-full text-right">الإجابة الصحيحة:</label>
+                        <div className="flex gap-3 w-full">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQuestionField(qIdx, "correctOptionIndex", 0)}
+                            className={`flex-1 py-3 rounded-xl font-bold transition-all border ${
+                              q.correctOptionIndex === 0
+                                ? "bg-green-500 border-green-500 text-white"
+                                : "bg-gray-50 dark:bg-[#222230] border-gray-100 dark:border-[#2D2D3D] text-gray-500 hover:bg-gray-100"
+                            }`}
+                          >
+                            صح
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQuestionField(qIdx, "correctOptionIndex", 1)}
+                            className={`flex-1 py-3 rounded-xl font-bold transition-all border ${
+                              q.correctOptionIndex === 1
+                                ? "bg-red-500 border-red-500 text-white"
+                                : "bg-gray-50 dark:bg-[#222230] border-gray-100 dark:border-[#2D2D3D] text-gray-500 hover:bg-gray-100"
+                            }`}
+                          >
+                            خطأ
+                          </button>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    )}
+
+                    {q.type === 'essay' && (
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-gray-400">الإجابة النموذجية (مرجع للمعلم)</label>
+                        <textarea
+                          value={q.correctAnswer || ""}
+                          onChange={(e) => handleUpdateQuestionField(qIdx, "correctAnswer", e.target.value)}
+                          rows={3}
+                          placeholder="اكتب الإجابة النموذجية هنا..."
+                          className="w-full p-3 bg-gray-50 dark:bg-[#222230] border border-gray-100 dark:border-[#2D2D3D] rounded-xl text-xs font-bold text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] resize-none"
+                        />
+                      </div>
+                    )}
 
                     {/* Additional fields: points and explanation */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-gray-50 dark:border-[#2D2D3D]/30 pt-3">

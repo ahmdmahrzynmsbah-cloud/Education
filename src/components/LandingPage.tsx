@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowRight, BookOpen, GraduationCap, Play, Star, Users, Trophy, Award, ChevronDown, CheckCircle2, 
   Sparkles, Mail, Send, CheckCircle, ArrowUpRight, Shield, Heart, Zap, Phone, MapPin, MessageSquare,
-  Calculator, FlaskConical, Dna, Languages, BookOpenText, Scroll, Globe, X, TrendingUp
+  Calculator, FlaskConical, Dna, Languages, BookOpenText, Scroll, Globe, X, TrendingUp, Menu
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
@@ -12,6 +12,34 @@ import { usePlatformSettings } from '../context/PlatformSettingsContext';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, getDocs } from 'firebase/firestore';
+import * as LucideIcons from 'lucide-react';
+
+const IconMap: Record<string, any> = {
+  Calculator: LucideIcons.Calculator,
+  Zap: LucideIcons.Zap,
+  FlaskConical: LucideIcons.FlaskConical,
+  Dna: LucideIcons.Dna,
+  Languages: LucideIcons.Languages,
+  BookOpenText: LucideIcons.BookOpenText,
+  Scroll: LucideIcons.Scroll,
+  Globe: LucideIcons.Globe,
+  BookOpen: LucideIcons.BookOpen,
+  Trophy: LucideIcons.Trophy,
+  Award: LucideIcons.Award,
+  GraduationCap: LucideIcons.GraduationCap,
+  Star: LucideIcons.Star,
+  Users: LucideIcons.Users,
+  Shield: LucideIcons.Shield,
+  Heart: LucideIcons.Heart,
+  MessageSquare: LucideIcons.MessageSquare,
+  Phone: LucideIcons.Phone,
+  Mail: LucideIcons.Mail,
+  MapPin: LucideIcons.MapPin,
+  Facebook: LucideIcons.Facebook,
+  Twitter: LucideIcons.Twitter,
+  Youtube: LucideIcons.Youtube,
+  Instagram: LucideIcons.Instagram
+};
 
 export default function LandingPage() {
   const { settings } = usePlatformSettings();
@@ -21,6 +49,7 @@ export default function LandingPage() {
   const [emailInput, setEmailInput] = useState('');
   const [subscribed, setSubscribed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
 
@@ -424,42 +453,36 @@ export default function LandingPage() {
       <section id="subjects" className="py-16 sm:py-24 bg-gray-50 dark:bg-[#0D0D12]">
         <div className="container mx-auto px-4 sm:px-6">
           <div className="text-center mb-12 max-w-2xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black mb-3 sm:mb-4 text-gray-900 dark:text-white">كل المواد اللي بتدور عليها</h2>
-            <p className="text-gray-500 dark:text-gray-400 text-sm sm:text-lg font-medium">اختار مادتك وابدأ اتعلم بطريقة ممتعة ومبسطة، مع أفضل المدرسين.</p>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black mb-3 sm:mb-4 text-gray-900 dark:text-white">{settings.subjectsTitle || 'كل المواد اللي بتدور عليها'}</h2>
+            <p className="text-gray-500 dark:text-gray-400 text-sm sm:text-lg font-medium">{settings.subjectsSubtitle || 'اختار مادتك وابدأ اتعلم بطريقة ممتعة ومبسطة، مع أفضل المدرسين.'}</p>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
-            {[
-              { title: 'الرياضيات', icon: Calculator, color: 'bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400' },
-              { title: 'الفيزياء', icon: Zap, color: 'bg-yellow-100 text-yellow-600 dark:bg-yellow-500/10 dark:text-yellow-400' },
-              { title: 'الكيمياء', icon: FlaskConical, color: 'bg-purple-100 text-purple-600 dark:bg-purple-500/10 dark:text-purple-400' },
-              { title: 'الأحياء', icon: Dna, color: 'bg-green-100 text-green-600 dark:bg-green-500/10 dark:text-green-400' },
-              { title: 'اللغة العربية', icon: Languages, color: 'bg-red-100 text-red-600 dark:bg-red-500/10 dark:text-red-400' },
-              { title: 'اللغة الإنجليزية', icon: BookOpenText, color: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400' },
-              { title: 'التاريخ', icon: Scroll, color: 'bg-orange-100 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400' },
-              { title: 'الجغرافيا', icon: Globe, color: 'bg-teal-100 text-teal-600 dark:bg-teal-500/10 dark:text-teal-400' }
-            ].map((subject, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 15 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-50px" }}
-                transition={{ duration: 0.4, delay: i * 0.05 }}
-                onClick={() => {
-                  if (!user) {
-                    navigate('/register');
-                  } else {
-                    navigate('/dashboard?tab=subjects&subject=' + encodeURIComponent(subject.title));
-                  }
-                }}
-                className="group cursor-pointer bg-white dark:bg-[#1A1A24] rounded-2xl sm:rounded-3xl p-5 sm:p-6 border border-gray-100 dark:border-[#2D2D3D] hover:border-[#00B4D8] dark:hover:border-[#D4AF37] hover:shadow-xl hover:shadow-[#00B4D8]/5 dark:hover:shadow-[#D4AF37]/5 transition-all text-center flex flex-col items-center justify-center h-full"
-              >
-                <div className={`w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-xl sm:rounded-2xl flex items-center justify-center mb-3 sm:mb-4 ${subject.color} group-hover:scale-110 transition-transform duration-300`}>
-                  <subject.icon className="w-6 h-6 sm:w-8 sm:h-8" />
-                </div>
-                <h3 className="text-sm sm:text-base font-bold text-gray-800 dark:text-gray-100">{subject.title}</h3>
-              </motion.div>
-            ))}
+            {(settings.subjects || []).map((subject, i) => {
+              const IconComponent = IconMap[subject.iconName] || LucideIcons.BookOpen;
+              return (
+                <motion.div
+                  key={subject.id || i}
+                  initial={{ opacity: 0, y: 15 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-50px" }}
+                  transition={{ duration: 0.4, delay: i * 0.05 }}
+                  onClick={() => {
+                    if (!user) {
+                      navigate('/register');
+                    } else {
+                      navigate('/dashboard?tab=subjects&subject=' + encodeURIComponent(subject.title));
+                    }
+                  }}
+                  className="group cursor-pointer bg-white dark:bg-[#1A1A24] rounded-2xl sm:rounded-3xl p-5 sm:p-6 border border-gray-100 dark:border-[#2D2D3D] hover:border-[#00B4D8] dark:hover:border-[#D4AF37] hover:shadow-xl hover:shadow-[#00B4D8]/5 dark:hover:shadow-[#D4AF37]/5 transition-all text-center flex flex-col items-center justify-center h-full"
+                >
+                  <div className={`w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-xl sm:rounded-2xl flex items-center justify-center mb-3 sm:mb-4 ${subject.color || 'bg-blue-100 text-blue-600'} group-hover:scale-110 transition-transform duration-300`}>
+                    <IconComponent className="w-6 h-6 sm:w-8 sm:h-8" />
+                  </div>
+                  <h3 className="text-sm sm:text-base font-bold text-gray-800 dark:text-gray-100">{subject.title}</h3>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -471,8 +494,8 @@ export default function LandingPage() {
       <section id="faq" className="py-24 bg-gray-50 dark:bg-[#0D0D12]">
         <div className="container mx-auto px-6 max-w-3xl">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-black mb-4 text-gray-900 dark:text-white">الأسئلة الشائعة</h2>
-            <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">كل اللي محتاج تعرفه عن منصة Teachland</p>
+            <h2 className="text-3xl md:text-4xl font-black mb-4 text-gray-900 dark:text-white">{settings.faqTitle || 'الأسئلة الشائعة'}</h2>
+            <p className="text-gray-500 dark:text-gray-400 text-lg font-medium">{settings.faqSubtitle || 'كل اللي محتاج تعرفه عن منصتنا'}</p>
           </div>
 
           <div className="space-y-4">
@@ -587,18 +610,26 @@ export default function LandingPage() {
                 منصة {settings.platformName} تقدم تجربة تعلم تفاعلية متكاملة لطلاب المرحلتين الإعدادية والثانوية في مصر، تهدف لتقديم أفضل مستويات الشرح بطرق حديثة تناسب جميع الطلاب.
               </p>
               <div className="pt-2 flex items-center gap-3">
-                <a href="#" className="w-8 h-8 rounded-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:scale-110 transition-all">
-                  <span className="text-xs font-bold">Fb</span>
-                </a>
-                <a href="#" className="w-8 h-8 rounded-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:scale-110 transition-all">
-                  <span className="text-xs font-bold">X</span>
-                </a>
-                <a href="#" className="w-8 h-8 rounded-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:scale-110 transition-all">
-                  <span className="text-xs font-bold">Yt</span>
-                </a>
-                <a href="#" className="w-8 h-8 rounded-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:scale-110 transition-all">
-                  <span className="text-xs font-bold">In</span>
-                </a>
+                {settings.socialLinks?.facebook && (
+                  <a href={settings.socialLinks.facebook} className="w-8 h-8 rounded-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:scale-110 transition-all">
+                    <LucideIcons.Facebook className="w-4 h-4" />
+                  </a>
+                )}
+                {settings.socialLinks?.twitter && (
+                  <a href={settings.socialLinks.twitter} className="w-8 h-8 rounded-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:scale-110 transition-all">
+                    <LucideIcons.Twitter className="w-4 h-4" />
+                  </a>
+                )}
+                {settings.socialLinks?.youtube && (
+                  <a href={settings.socialLinks.youtube} className="w-8 h-8 rounded-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:scale-110 transition-all">
+                    <LucideIcons.Youtube className="w-4 h-4" />
+                  </a>
+                )}
+                {settings.socialLinks?.instagram && (
+                  <a href={settings.socialLinks.instagram} className="w-8 h-8 rounded-full bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:scale-110 transition-all">
+                    <LucideIcons.Instagram className="w-4 h-4" />
+                  </a>
+                )}
               </div>
             </div>
 
@@ -667,20 +698,24 @@ export default function LandingPage() {
                 تواصل معنا
               </h3>
               <div className="space-y-3 text-xs sm:text-sm font-medium">
-                <div className="flex items-start gap-2.5">
-                  <Phone className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37] shrink-0 mt-0.5" />
-                  <div className="text-right">
-                    <p className="text-gray-400 text-[10px]">الخط الساخن والواتساب</p>
-                    <p className="font-bold text-gray-800 dark:text-gray-200" dir="ltr">+20 100 123 4567</p>
+                {settings.contactPhone && (
+                  <div className="flex items-start gap-2.5">
+                    <Phone className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37] shrink-0 mt-0.5" />
+                    <div className="text-right">
+                      <p className="text-gray-400 text-[10px]">الخط الساخن والواتساب</p>
+                      <p className="font-bold text-gray-800 dark:text-gray-200" dir="ltr">{settings.contactPhone}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-start gap-2.5">
-                  <Mail className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37] shrink-0 mt-0.5" />
-                  <div className="text-right">
-                    <p className="text-gray-400 text-[10px]">الدعم والمبيعات</p>
-                    <p className="font-bold text-gray-800 dark:text-gray-200">support@tafawwoq-edu.com</p>
+                )}
+                {settings.contactEmail && (
+                  <div className="flex items-start gap-2.5">
+                    <Mail className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37] shrink-0 mt-0.5" />
+                    <div className="text-right">
+                      <p className="text-gray-400 text-[10px]">الدعم والمبيعات</p>
+                      <p className="font-bold text-gray-800 dark:text-gray-200">{settings.contactEmail}</p>
+                    </div>
                   </div>
-                </div>
+                )}
                 <div className="flex items-start gap-2.5">
                   <MapPin className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37] shrink-0 mt-0.5" />
                   <div className="text-right text-gray-500 dark:text-gray-400 font-bold">

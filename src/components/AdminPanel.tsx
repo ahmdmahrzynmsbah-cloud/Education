@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, updateDoc, doc, deleteDoc, getDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, addDoc, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, deleteDoc, getDoc, setDoc, onSnapshot, arrayUnion, arrayRemove, addDoc, query, orderBy, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
+import { usePlatformSettings } from '../context/PlatformSettingsContext';
 import { 
   Users, BookOpen, Shield, Trash2, Edit2, Edit3, Loader2, CheckCircle2, 
   Eye, EyeOff, Printer, X, Calendar, User as UserIcon, Mail, Phone, Lock, 
   GraduationCap, Book, AlertTriangle, FileText, Settings, Sparkles, 
   Hash, Award, FileCheck, Check, Activity, ShieldAlert,
   MapPin, School, PhoneCall, Layers, Clock, Search, Filter,
-  ArrowUpDown, SlidersHorizontal, RotateCcw, Archive, Download,
+  ArrowUpDown, SlidersHorizontal, RotateCcw, Archive, Download, Plus,
   CreditCard, Image as ImageIcon, XCircle, Copy, History, DollarSign, Ticket, Wallet, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -587,41 +588,7 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
   const [courseToDelete, setCourseToDelete] = useState<any | null>(null);
   const [updatingCourseId, setUpdatingCourseId] = useState<string | null>(null);
 
-  // Platform dynamic settings state
-  const [platformSettings, setPlatformSettings] = useState<{
-    platformName: string;
-    logoChar: string;
-    logoUrl?: string;
-    heroTitle: string;
-    heroSubtitle: string;
-    showGradesSection: boolean;
-    showSubjectsSection: boolean;
-    showFeaturesSection: boolean;
-    showFaqSection: boolean;
-    gradesTitle: string;
-    gradesSubtitle: string;
-    subjectsTitle: string;
-    subjectsSubtitle: string;
-    faqTitle: string;
-    faqSubtitle: string;
-    vodafoneCashNumber: string;
-  }>({
-    platformName: 'Teachland',
-    logoChar: 'T',
-    heroTitle: 'مدرستك كلها في جيبك',
-    heroSubtitle: 'شرح مبسط في فيديوهات قصيرة، اختبارات ذكية، ومنافسات مع أصحابك. كل المواد اللي محتاجها من مكان واحد، وفي أي وقت.',
-    showGradesSection: true,
-    showSubjectsSection: true,
-    showFeaturesSection: true,
-    showFaqSection: true,
-    gradesTitle: 'الصفوف الدراسية المتاحة',
-    gradesSubtitle: 'اختر صفك الدراسي المعتمد وابدأ رحلة تميزك الأكاديمي مع أقوى شرح تفاعلي ونخبة من عمالقة التدريس.',
-    subjectsTitle: 'استكشف المواد الدراسية',
-    subjectsSubtitle: 'نخبة من أفضل المعلمين يقدمون لك شرحاً وافياً ومبسطاً لكل المواد الدراسية بمختلف المراحل.',
-    faqTitle: 'الأسئلة الشائعة',
-    faqSubtitle: 'إجابات على كل استفساراتك حول المنصة',
-    vodafoneCashNumber: '01012345678'
-  });
+  const { settings: platformSettings, updateSettings, loading: loadingSettings } = usePlatformSettings();
 
   // Course payments / Vodafone Cash requests state
   const [payments, setPayments] = useState<any[]>([]);
@@ -639,8 +606,33 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
   // Settings upload
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [processingPaymentId, setProcessingPaymentId] = useState<string | null>(null);
-  const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [tempSubjects, setTempSubjects] = useState(platformSettings.subjects || []);
+  const [newSubjectTitle, setNewSubjectTitle] = useState('');
+  const [newSubjectIcon, setNewSubjectIcon] = useState('BookOpen');
+  const [newSubjectColor, setNewSubjectColor] = useState('bg-blue-100 text-blue-600');
+  const [isAddingSubject, setIsAddingSubject] = useState(false);
+
+  const subjectIconOptions = [
+    'Calculator', 'Zap', 'FlaskConical', 'Dna', 'Languages', 'BookOpenText', 'Scroll', 'Globe', 'BookOpen', 'Trophy', 'Award', 'GraduationCap', 'Star', 'Users'
+  ];
+
+  const subjectColorOptions = [
+    { name: 'أزرق', value: 'bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400' },
+    { name: 'أصفر', value: 'bg-yellow-100 text-yellow-600 dark:bg-yellow-500/10 dark:text-yellow-400' },
+    { name: 'بنفسجي', value: 'bg-purple-100 text-purple-600 dark:bg-purple-500/10 dark:text-purple-400' },
+    { name: 'أخضر', value: 'bg-green-100 text-green-600 dark:bg-green-500/10 dark:text-green-400' },
+    { name: 'أحمر', value: 'bg-red-100 text-red-600 dark:bg-red-500/10 dark:text-red-400' },
+    { name: 'نيلي', value: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400' },
+    { name: 'برتقالي', value: 'bg-orange-100 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400' },
+    { name: 'تركواز', value: 'bg-teal-100 text-teal-600 dark:bg-teal-500/10 dark:text-teal-400' }
+  ];
+
+  useEffect(() => {
+    if (platformSettings.subjects) {
+      setTempSubjects(platformSettings.subjects);
+    }
+  }, [platformSettings.subjects]);
 
   // Search and Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -678,20 +670,12 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
     // 1. Fetch other static configurations/progress once on mount
     const fetchOtherData = async () => {
       try {
-        const [progressSnap, settingsSnap] = await Promise.all([
+        const [progressSnap] = await Promise.all([
           getDocs(collection(db, 'course_progress')).catch(err => {
             console.error("Error fetching course progress in background:", err);
             return { docs: [] } as any;
-          }),
-          getDoc(doc(db, 'platform_settings', 'config')).catch(err => {
-            console.error("Error fetching platform settings:", err);
-            return null;
           })
         ]);
-
-        if (settingsSnap && settingsSnap.exists()) {
-          setPlatformSettings(prev => ({ ...prev, ...settingsSnap.data() }));
-        }
 
         const progressData: any[] = [];
         progressSnap.forEach((doc: any) => {
@@ -810,27 +794,35 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
         logoUrl = await getDownloadURL(storageRef);
       }
 
-      const updated = {
-        platformName: formData.get('platformName') as string || platformSettings.platformName,
-        logoChar: formData.get('logoChar') as string || platformSettings.logoChar,
-        logoUrl: logoUrl,
-        heroTitle: formData.get('heroTitle') as string || platformSettings.heroTitle,
-        heroSubtitle: formData.get('heroSubtitle') as string || platformSettings.heroSubtitle,
+      const updated: any = {
+        platformName: (formData.get('platformName') as string) || platformSettings.platformName || 'Teachland',
+        logoChar: (formData.get('logoChar') as string) || platformSettings.logoChar || 'T',
+        logoUrl: logoUrl || '',
+        heroTitle: (formData.get('heroTitle') as string) || platformSettings.heroTitle || '',
+        heroSubtitle: (formData.get('heroSubtitle') as string) || platformSettings.heroSubtitle || '',
         showGradesSection: formData.get('showGradesSection') === 'true',
         showSubjectsSection: formData.get('showSubjectsSection') === 'true',
         showFeaturesSection: formData.get('showFeaturesSection') === 'true',
         showFaqSection: formData.get('showFaqSection') === 'true',
-        gradesTitle: formData.get('gradesTitle') as string || platformSettings.gradesTitle,
-        gradesSubtitle: formData.get('gradesSubtitle') as string || platformSettings.gradesSubtitle,
-        subjectsTitle: formData.get('subjectsTitle') as string || platformSettings.subjectsTitle,
-        subjectsSubtitle: formData.get('subjectsSubtitle') as string || platformSettings.subjectsSubtitle,
-        faqTitle: formData.get('faqTitle') as string || platformSettings.faqTitle,
-        faqSubtitle: formData.get('faqSubtitle') as string || platformSettings.faqSubtitle,
-        vodafoneCashNumber: formData.get('vodafoneCashNumber') as string || platformSettings.vodafoneCashNumber,
+        gradesTitle: (formData.get('gradesTitle') as string) || platformSettings.gradesTitle || '',
+        gradesSubtitle: (formData.get('gradesSubtitle') as string) || platformSettings.gradesSubtitle || '',
+        subjectsTitle: (formData.get('subjectsTitle') as string) || platformSettings.subjectsTitle || '',
+        subjectsSubtitle: (formData.get('subjectsSubtitle') as string) || platformSettings.subjectsSubtitle || '',
+        faqTitle: (formData.get('faqTitle') as string) || platformSettings.faqTitle || '',
+        faqSubtitle: (formData.get('faqSubtitle') as string) || platformSettings.faqSubtitle || '',
+        vodafoneCashNumber: (formData.get('vodafoneCashNumber') as string) || platformSettings.vodafoneCashNumber || '',
+        subjects: tempSubjects || [],
+        contactPhone: (formData.get('contactPhone') as string) || platformSettings.contactPhone || '',
+        contactEmail: (formData.get('contactEmail') as string) || platformSettings.contactEmail || '',
+        socialLinks: {
+          facebook: (formData.get('facebook') as string) || platformSettings.socialLinks?.facebook || '',
+          twitter: (formData.get('twitter') as string) || platformSettings.socialLinks?.twitter || '',
+          youtube: (formData.get('youtube') as string) || platformSettings.socialLinks?.youtube || '',
+          instagram: (formData.get('instagram') as string) || platformSettings.socialLinks?.instagram || ''
+        }
       };
 
-      await setDoc(doc(db, 'platform_settings', 'config'), updated);
-      setPlatformSettings(updated);
+      await updateSettings(updated);
       setLogoFile(null);
       toast.success("تم حفظ إعدادات المنصة وتحديثها بنجاح! ✨");
     } catch (err) {
@@ -841,29 +833,32 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
     }
   };
 
-  const handleApproveStudent = async (studentId: string, name: string) => {
+  const handleApproveUser = async (userId: string, name: string, role: string) => {
     try {
-      await updateDoc(doc(db, 'users', studentId), {
+      await updateDoc(doc(db, 'users', userId), {
         isApproved: true
       });
       // Update local state
-      setUsers(prev => prev.map(u => u.id === studentId ? { ...u, isApproved: true } : u));
-      toast.success(`تم قبول وتفعيل حساب الطالب ${name} بنجاح! 🎉`);
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, isApproved: true } : u));
+      
+      const roleName = role === 'teacher' ? 'المعلم' : role === 'parent' ? 'ولي الأمر' : 'الطالب';
+      toast.success(`تم قبول وتفعيل حساب ${roleName} ${name} بنجاح! 🎉`);
     } catch (err) {
-      console.error("Error approving student:", err);
+      console.error("Error approving user:", err);
       toast.error("حدث خطأ أثناء تفعيل الحساب");
     }
   };
 
-  const handleRejectStudent = async (studentId: string, name: string) => {
-    if (!window.confirm(`هل أنت متأكد من رفض وحذف طلب الطالب ${name}؟`)) return;
+  const handleRejectUser = async (userId: string, name: string, role: string) => {
+    const roleName = role === 'teacher' ? 'المعلم' : role === 'parent' ? 'ولي الأمر' : 'الطالب';
+    if (!window.confirm(`هل أنت متأكد من رفض وحذف طلب ${roleName} ${name}؟`)) return;
     try {
-      await deleteDoc(doc(db, 'users', studentId));
-      setUsers(prev => prev.filter(u => u.id !== studentId));
-      toast.success(`تم رفض وحذف طلب الطالب ${name} بنجاح`);
+      await deleteDoc(doc(db, 'users', userId));
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      toast.success(`تم رفض وحذف طلب ${roleName} ${name} بنجاح`);
     } catch (err) {
-      console.error("Error rejecting student:", err);
-      toast.error("حدث خطأ أثناء حذف طلب الطالب");
+      console.error("Error rejecting user:", err);
+      toast.error("حدث خطأ أثناء حذف طلب الحساب");
     }
   };
 
@@ -1000,6 +995,20 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
       const deletedUser = users.find(u => u.id === id);
       const userName = deletedUser ? deletedUser.name : '';
       await deleteDoc(doc(db, 'users', id));
+      
+      // Remove student from all courses they are enrolled in
+      const qCourses = query(collection(db, 'courses'), where('enrolledStudentIds', 'array-contains', id));
+      const coursesSnap = await getDocs(qCourses);
+      const updatePromises = coursesSnap.docs.map(courseDoc => {
+        const courseData = courseDoc.data();
+        const newEnrolledIds = (courseData.enrolledStudentIds || []).filter(enrolledId => enrolledId !== id);
+        return updateDoc(doc(db, 'courses', courseDoc.id), {
+          enrolledStudentIds: newEnrolledIds,
+          enrolledStudents: newEnrolledIds.length
+        });
+      });
+      await Promise.all(updatePromises);
+      
       setUsers(prev => prev.filter(u => u.id !== id));
       showSuccessToast('تم حذف حساب الطالب بنجاح من قاعدة البيانات', 'delete', userName);
     } catch (error) {
@@ -1577,7 +1586,7 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
         </div>
         )}
 
-        {loading ? (
+        {loading || loadingSettings ? (
           <div className="flex justify-center items-center py-20">
             <Loader2 className="w-8 h-8 text-[#00B4D8] dark:text-[#D4AF37] animate-spin" />
           </div>
@@ -1640,7 +1649,7 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                 <h3 className="text-base font-black text-gray-800 dark:text-white flex items-center gap-2">
                   <BookOpen className="w-5 h-5 text-purple-500" /> عرض الأقسام في الصفحة الرئيسية
                 </h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-gray-500 block">قسم الصفوف الدراسية</label>
                     <select
@@ -1791,6 +1800,34 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                     </div>
                   </div>
                   <div className="space-y-3 md:col-span-2 border-t border-gray-100 dark:border-[#2D2D3D] pt-4">
+                    <h4 className="text-xs font-black text-emerald-500">معلومات التواصل (فوتر المنصة)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 block mb-1">رقم الهاتف للتواصل</label>
+                        <input
+                          type="text"
+                          name="contactPhone"
+                          defaultValue={platformSettings.contactPhone}
+                          placeholder="مثال: +20 100 123 4567"
+                          className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 block mb-1">البريد الإلكتروني للدعم</label>
+                        <input
+                          type="email"
+                          name="contactEmail"
+                          defaultValue={platformSettings.contactEmail}
+                          placeholder="support@example.com"
+                          className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 md:col-span-2 border-t border-gray-100 dark:border-[#2D2D3D] pt-4">
                     <h4 className="text-xs font-black text-rose-500">إعدادات الدفع المالي (فودافون كاش)</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -1807,6 +1844,148 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                       <div className="flex items-center text-[10.5px] text-gray-400 font-bold bg-rose-50 dark:bg-rose-950/20 p-3 rounded-xl border border-rose-100 dark:border-rose-900/30">
                         هذا الرقم سيظهر للطلاب في صفحة تفاصيل الكورس عند الضغط على زر "الاشتراك" لتحويل المبلغ وإرسال إثبات الدفع.
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 md:col-span-2 border-t border-gray-100 dark:border-[#2D2D3D] pt-4">
+                    <h4 className="text-xs font-black text-indigo-500">روابط التواصل الاجتماعي</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 block mb-1">رابط فيسبوك</label>
+                        <input
+                          type="text"
+                          name="facebook"
+                          defaultValue={platformSettings.socialLinks?.facebook}
+                          className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 block mb-1">رابط تويتر (X)</label>
+                        <input
+                          type="text"
+                          name="twitter"
+                          defaultValue={platformSettings.socialLinks?.twitter}
+                          className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 block mb-1">رابط يوتيوب</label>
+                        <input
+                          type="text"
+                          name="youtube"
+                          defaultValue={platformSettings.socialLinks?.youtube}
+                          className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 block mb-1">رابط إنستجرام</label>
+                        <input
+                          type="text"
+                          name="instagram"
+                          defaultValue={platformSettings.socialLinks?.instagram}
+                          className="w-full bg-white dark:bg-[#12121A] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-3 py-2 outline-none focus:border-[#00B4D8] dark:text-white font-bold text-xs"
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 md:col-span-2 border-t border-gray-100 dark:border-[#2D2D3D] pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-black text-cyan-500">إدارة المواد الدراسية (الرئيسية)</h4>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingSubject(!isAddingSubject)}
+                        className="text-[10px] font-black bg-cyan-500 text-white px-3 py-1 rounded-lg hover:bg-cyan-600 transition-colors flex items-center gap-1"
+                      >
+                        {isAddingSubject ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                        {isAddingSubject ? 'إلغاء' : 'إضافة مادة جديدة'}
+                      </button>
+                    </div>
+
+                    {isAddingSubject && (
+                      <div className="bg-white dark:bg-[#1A1A24] p-4 rounded-xl border border-dashed border-cyan-500/30 space-y-3 mb-4 animate-in slide-in-from-top-2 duration-300">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-500 block mb-1">اسم المادة</label>
+                            <input
+                              type="text"
+                              value={newSubjectTitle}
+                              onChange={(e) => setNewSubjectTitle(e.target.value)}
+                              className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-lg px-3 py-2 outline-none focus:border-cyan-500 dark:text-white font-bold text-xs"
+                              placeholder="مثال: الفلسفة"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-500 block mb-1">أيقونة المادة</label>
+                            <select
+                              value={newSubjectIcon}
+                              onChange={(e) => setNewSubjectIcon(e.target.value)}
+                              className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-lg px-3 py-2 outline-none focus:border-cyan-500 dark:text-white font-bold text-xs"
+                            >
+                              {subjectIconOptions.map(icon => (
+                                <option key={icon} value={icon}>{icon}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-500 block mb-1">لون المادة</label>
+                            <select
+                              value={newSubjectColor}
+                              onChange={(e) => setNewSubjectColor(e.target.value)}
+                              className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-lg px-3 py-2 outline-none focus:border-cyan-500 dark:text-white font-bold text-xs"
+                            >
+                              {subjectColorOptions.map(color => (
+                                <option key={color.value} value={color.value}>{color.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!newSubjectTitle) return;
+                              const newSubject = {
+                                id: Date.now().toString(),
+                                title: newSubjectTitle,
+                                iconName: newSubjectIcon,
+                                color: newSubjectColor
+                              };
+                              setTempSubjects([...tempSubjects, newSubject]);
+                              setNewSubjectTitle('');
+                              setIsAddingSubject(false);
+                            }}
+                            className="bg-cyan-500 text-white font-black text-[10px] py-2 px-6 rounded-lg hover:bg-cyan-600 transition-all"
+                          >
+                            تأكيد إضافة المادة
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {tempSubjects.map((subject, idx) => (
+                        <div key={subject.id || idx} className="bg-white dark:bg-[#12121A] border border-gray-150 dark:border-[#2D2D3D] p-3 rounded-xl flex items-center justify-between group">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${subject.color}`}>
+                              {/* Re-using subject.icon logic if possible or just show icon name */}
+                              <Book className="w-3.5 h-3.5" />
+                            </div>
+                            <span className="text-[11px] font-black text-gray-800 dark:text-gray-200 truncate">{subject.title}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setTempSubjects(tempSubjects.filter((_, i) => i !== idx))}
+                            className="text-red-400 hover:text-red-600 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -2196,15 +2375,15 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                                 </button>
                               </div>
 
-                              {/* Danger Delete course */}
-                              <button
-                                type="button"
-                                onClick={() => setCourseToDelete(course)}
-                                className="w-full py-1.5 text-center text-red-400 hover:text-red-500 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer border border-dashed border-red-500/10"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                                حذف الكورس نهائياً من السيستم
-                              </button>
+                                {/* Delete Course Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => setCourseToDelete(course)}
+                                  className="w-full py-2 px-3 bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/20 dark:hover:bg-red-900/30 dark:text-red-400 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-red-200 dark:border-red-900/30"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  حذف الكورس نهائياً من السيستم
+                                </button>
                             </div>
                           </div>
                         </div>
@@ -2284,9 +2463,20 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                      {/* Modern pill styled attributes */}
                     {activeTab === 'students' && (
                       <td className="py-2.5 px-4">
-                        <span className="bg-blue-50 text-[#00B4D8] dark:bg-blue-950/40 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50 py-0.5 px-2.5 rounded-lg text-[11px] font-black inline-block">
-                          {user.grade || '-'}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span className="bg-blue-50 text-[#00B4D8] dark:bg-blue-950/40 dark:text-blue-400 border border-blue-100 dark:border-blue-900/50 py-0.5 px-2.5 rounded-lg text-[11px] font-black inline-block">
+                            {user.grade || '-'}
+                          </span>
+                          {user.branch && (
+                            <span className="bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400 border border-purple-100 dark:border-purple-900/50 py-0.5 px-2 rounded-md text-[9px] font-black inline-block">
+                              {user.branch === 'science' ? 'علمي علوم' : 
+                               user.branch === 'math' ? 'علمي رياضة' : 
+                               user.branch === 'arts' ? 'أدبي' : 
+                               user.branch === 'scientific' ? 'علمي' :
+                               user.branch === 'literary' ? 'أدبي' : user.branch}
+                            </span>
+                          )}
+                        </div>
                       </td>
                     )}
                     {activeTab === 'approvals' && (
@@ -2302,7 +2492,19 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                             {user.role === 'teacher' ? 'معلم' : user.role === 'parent' ? 'ولي أمر' : 'طالب'}
                           </span>
                           <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400">
-                            {user.role === 'teacher' ? (user.subject || '-') : user.role === 'parent' ? `هاتف الطالب: ${user.studentPhone || '-'}` : (user.grade || '-')}
+                            {user.role === 'teacher' ? (user.subject || '-') : user.role === 'parent' ? `هاتف الطالب: ${user.studentPhone || '-'}` : (
+                              <>
+                                {user.grade || '-'}
+                                {user.branch && ` • ${
+                                  user.branch === 'science' ? 'علمي علوم' : 
+                                  user.branch === 'math' ? 'علمي رياضة' : 
+                                  user.branch === 'arts' ? 'أدبي' : 
+                                  user.branch === 'scientific' ? 'علمي' :
+                                  user.branch === 'literary' ? 'أدبي' : user.branch
+                                }`}
+                                {user.educationSystem === 'azhar' && ' (أزهري)'}
+                              </>
+                            )}
                           </span>
                         </div>
                       </td>
@@ -2338,15 +2540,15 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                         {activeTab === 'approvals' ? (
                           <>
                             <button
-                              onClick={() => handleApproveStudent(user.id, user.name)}
+                              onClick={() => handleApproveUser(user.id, user.name, user.role)}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-900/50 rounded-xl transition-all font-black text-xs shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
-                              title="قبول وتفعيل حساب الطالب"
+                              title="قبول وتفعيل الحساب"
                             >
                               <Check className="w-3.5 h-3.5" />
                               <span>قبول وتفعيل</span>
                             </button>
                             <button
-                              onClick={() => handleRejectStudent(user.id, user.name)}
+                              onClick={() => handleRejectUser(user.id, user.name, user.role)}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-900/50 rounded-xl transition-all font-black text-xs shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
                               title="رفض وحذف طلب التسجيل"
                             >
@@ -2660,6 +2862,37 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                         <span className="text-gray-900 dark:text-white text-xs block">{selectedUser.grade || 'غير محدد'}</span>
                       </div>
                     </div>
+
+                    <div className="flex items-center p-2.5 bg-gray-50 dark:bg-[#0D0D12] rounded-xl border border-gray-100 dark:border-[#2D2D3D]">
+                      <div className="w-8.5 h-8.5 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center shrink-0 ml-2.5">
+                        <School className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-gray-400 dark:text-gray-500 block text-[9px] mb-0.5">نظام التعليم</span>
+                        <span className="text-gray-900 dark:text-white text-xs block">
+                          {selectedUser.educationSystem === 'azhar' ? 'أزهري' : 'عام'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Branch (Important for High School) */}
+                    {selectedUser.role === 'student' && (
+                      <div className="flex items-center p-2.5 bg-cyan-50 dark:bg-cyan-950/20 rounded-xl border border-cyan-100 dark:border-cyan-900/30">
+                        <div className="w-8.5 h-8.5 rounded-lg bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 flex items-center justify-center shrink-0 ml-2.5">
+                          <BookOpen className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-cyan-600 dark:text-cyan-400 block text-[10px] font-black mb-0.5">الشعبة الدراسية</span>
+                          <span className="text-gray-900 dark:text-white text-sm font-black block">
+                            {selectedUser.branch === 'science' ? 'علمي علوم' : 
+                             selectedUser.branch === 'math' ? 'علمي رياضة' : 
+                             selectedUser.branch === 'arts' ? 'أدبي' : 
+                             selectedUser.branch === 'scientific' ? 'علمي' :
+                             selectedUser.branch === 'literary' ? 'أدبي' : selectedUser.branch || 'غير محددة'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex items-center p-2.5 bg-gray-50 dark:bg-[#0D0D12] rounded-xl border border-gray-100 dark:border-[#2D2D3D]">
                       <div className="w-8.5 h-8.5 rounded-lg bg-teal-100 dark:bg-teal-900/30 text-teal-500 flex items-center justify-center shrink-0 ml-2.5">
@@ -3060,10 +3293,30 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                           </div>
 
                           {selectedUser.role === 'student' && (
-                            <div className="flex justify-between border-b border-slate-100 pb-1.5">
-                              <span className="text-slate-400 font-medium">الصف الدراسي المقيد به:</span>
-                              <span className="text-[#00B4D8]">{selectedUser.grade || 'غير محدد'}</span>
-                            </div>
+                            <>
+                              <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                                <span className="text-slate-400 font-medium">الصف الدراسي المقيد به:</span>
+                                <span className="text-[#00B4D8]">{selectedUser.grade || 'غير محدد'}</span>
+                              </div>
+                              <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                                <span className="text-slate-400 font-medium">نوع التعليم:</span>
+                                <span className="text-[#00B4D8]">
+                                  {selectedUser.educationSystem === 'azhar' ? 'ثانوي أزهري' : 'ثانوي عام'}
+                                </span>
+                              </div>
+                              {selectedUser.branch && (
+                                <div className="flex justify-between border-b border-slate-100 pb-1.5">
+                                  <span className="text-slate-400 font-medium">الشعبة:</span>
+                                  <span className="text-[#00B4D8]">
+                                    {selectedUser.branch === 'science' ? 'علمي علوم' : 
+                                     selectedUser.branch === 'math' ? 'علمي رياضة' : 
+                                     selectedUser.branch === 'arts' ? 'أدبي' : 
+                                     selectedUser.branch === 'scientific' ? 'علمي' :
+                                     selectedUser.branch === 'literary' ? 'أدبي' : selectedUser.branch}
+                                  </span>
+                                </div>
+                              )}
+                            </>
                           )}
 
                           {selectedUser.role === 'teacher' && (
@@ -3545,7 +3798,7 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
         {selectedCourseForEdit && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedCourseForEdit(null)} />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-lg relative z-10 shadow-2xl p-6 text-right" dir="rtl">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-lg relative z-10 shadow-2xl p-6 text-right max-h-[90vh] overflow-y-auto" style={{ maxHeight: "90vh", overflowY: "auto" }} dir="rtl">
               <div className="flex justify-between items-center pb-4 border-b border-gray-100 dark:border-[#2D2D3D] mb-4 shrink-0">
                 <h3 className="text-xl font-black text-gray-900 dark:text-white flex items-center gap-2">
                   <Edit3 className="w-6 h-6 text-[#00B4D8] dark:text-[#D4AF37]" />
@@ -3579,7 +3832,7 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-bold text-gray-400 block mb-1">المادة الدراسية</label>
                     <input
@@ -3646,7 +3899,7 @@ export default function AdminPanel({ initialTab, userData }: { initialTab?: 'stu
         {courseToDelete && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setCourseToDelete(null)} />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-md relative z-10 shadow-2xl p-6 text-right" dir="rtl">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-md relative z-10 shadow-2xl p-6 text-right max-h-[90vh] overflow-y-auto" style={{ maxHeight: "90vh", overflowY: "auto" }} dir="rtl">
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                   <AlertTriangle className="w-8 h-8" />

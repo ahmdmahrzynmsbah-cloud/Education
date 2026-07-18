@@ -5,11 +5,15 @@ import { X, Play, Clock, BookOpen, ChevronRight, ChevronLeft, Award, CheckCircle
 import { doc, setDoc } from "firebase/firestore";
 import { toast } from "react-hot-toast";
 
+export type QuestionType = 'multiple_choice' | 'true_false' | 'essay';
+
 interface Question {
   id: string;
   text: string;
+  type?: QuestionType;
   options: string[];
   correctOptionIndex: number;
+  correctAnswer?: string;
   points: number;
   explanation?: string;
 }
@@ -33,7 +37,7 @@ export default function StudentExamTaking({
 }: StudentExamTakingProps) {
   const [examStarted, setExamStarted] = useState(false);
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, number>>({});
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, any>>({});
   const [timeLeft, setTimeLeft] = useState<number | null>(null); // in seconds
   const [submitting, setSubmitting] = useState(false);
   

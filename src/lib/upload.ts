@@ -36,7 +36,7 @@ function translateStorageError(code: string): string {
 /**
  * Compresses an image and returns it as a Base64 string for direct storage.
  */
-export async function compressImageToBase64(file: File): Promise<string> {
+export async function compressImageToBase64(file: File, maxWidth?: number, maxHeight?: number): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) {
       // If it's not an image (e.g. somehow a PDF), just read as base64 without compression
@@ -57,8 +57,8 @@ export async function compressImageToBase64(file: File): Promise<string> {
         let width = img.width;
         let height = img.height;
 
-        const MAX_WIDTH = 800; // Smaller max width for base64
-        const MAX_HEIGHT = 800;
+        const MAX_WIDTH = maxWidth || 800; // Smaller max width for base64
+        const MAX_HEIGHT = maxHeight || 800;
 
         if (width > height) {
           if (width > MAX_WIDTH) {

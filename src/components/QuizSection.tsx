@@ -343,16 +343,24 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
   };
 
   // Teacher actions: Edit/Add Questions
-  const handleAddQuestion = () => {
+  const handleAddQuestion = (type: 'multiple_choice' | 'true_false' | 'essay' = 'multiple_choice') => {
     const newId = `q_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-    const newQ: Question = {
+    let newQ: Question = {
       id: newId,
       text: 'اكتب نص السؤال هنا...',
-      options: ['الخيار الأول', 'الخيار الثاني', 'الخيار الثالث', 'الخيار الرابع'],
+      type,
+      options: [],
       correctOptionIndex: 0,
       explanation: 'اكتب التوضيح العلمي والتفسير هنا لحل هذا السؤال بالتفصيل.',
       points: 5
     };
+    if (type === 'multiple_choice') {
+      newQ.options = ['الخيار الأول', 'الخيار الثاني', 'الخيار الثالث', 'الخيار الرابع'];
+    } else if (type === 'true_false') {
+      newQ.options = ['صح', 'خطأ'];
+    } else if (type === 'essay') {
+      newQ.correctAnswer = '';
+    }
     setQuestions([...questions, newQ]);
   };
 
@@ -629,14 +637,32 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                   قائمة الأسئلة ({questions.length})
                 </h4>
                 {(isEditing || !quiz) && (
-                  <button
-                    type="button"
-                    onClick={handleAddQuestion}
-                    className="text-xs font-black text-[#00B4D8] dark:text-[#D4AF37] bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 px-4 py-2 rounded-xl flex items-center gap-1.5 hover:opacity-80 transition-all"
-                  >
-                    <Plus className="w-4 h-4" />
-                    إضافة سؤال جديد
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleAddQuestion('multiple_choice')}
+                      className="text-[10px] sm:text-xs font-black text-[#00B4D8] dark:text-[#D4AF37] bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 px-3 py-2 rounded-xl flex items-center gap-1.5 hover:opacity-80 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      اختيار من متعدد
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddQuestion('true_false')}
+                      className="text-[10px] sm:text-xs font-black text-[#00B4D8] dark:text-[#D4AF37] bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 px-3 py-2 rounded-xl flex items-center gap-1.5 hover:opacity-80 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      صح وخطأ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddQuestion('essay')}
+                      className="text-[10px] sm:text-xs font-black text-[#00B4D8] dark:text-[#D4AF37] bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 px-3 py-2 rounded-xl flex items-center gap-1.5 hover:opacity-80 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      سؤال مقالي
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -676,37 +702,85 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                       />
                     </div>
 
-                    {/* MCQs and Select Correct */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block">خيارات السؤال (اختر الدائرة الخضراء لتحديد الإجابة الصحيحة)</label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {q.options.map((opt, optIdx) => (
-                          <div key={optIdx} className="flex items-center gap-2 bg-gray-50 dark:bg-[#0D0D12] rounded-xl p-2 border border-gray-200 dark:border-[#2D2D3D]">
-                            <button
-                              type="button"
-                              disabled={!isEditing && !!quiz}
-                              onClick={() => handleUpdateQuestionField(qIdx, 'correctOptionIndex', optIdx)}
-                              className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center font-bold text-xs border ${
-                                q.correctOptionIndex === optIdx
-                                  ? 'bg-green-500 text-white border-green-500'
-                                  : 'bg-white dark:bg-[#1A1A24] text-gray-400 border-gray-300 dark:border-gray-600 hover:border-green-500'
-                              }`}
-                              title="تحديد كإجابة صحيحة"
-                            >
-                              {q.correctOptionIndex === optIdx ? <Check className="w-3.5 h-3.5" /> : optionMarkers[optIdx]}
-                            </button>
-                            <input
-                              type="text"
-                              disabled={!isEditing && !!quiz}
-                              value={opt}
-                              onChange={(e) => handleUpdateOption(qIdx, optIdx, e.target.value)}
-                              placeholder={`الخيار ${optionMarkers[optIdx]}`}
-                              className="w-full bg-transparent text-xs font-medium outline-none border-none p-1"
-                            />
-                          </div>
-                        ))}
+                    {/* Question type rendering */}
+                    {(!q.type || q.type === 'multiple_choice') && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block">خيارات السؤال (اختر الدائرة الخضراء لتحديد الإجابة الصحيحة)</label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {q.options.map((opt, optIdx) => (
+                            <div key={optIdx} className="flex items-center gap-2 bg-gray-50 dark:bg-[#0D0D12] rounded-xl p-2 border border-gray-200 dark:border-[#2D2D3D]">
+                              <button
+                                type="button"
+                                disabled={!isEditing && !!quiz}
+                                onClick={() => handleUpdateQuestionField(qIdx, 'correctOptionIndex', optIdx)}
+                                className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center font-bold text-xs border ${
+                                  q.correctOptionIndex === optIdx
+                                    ? 'bg-green-500 text-white border-green-500'
+                                    : 'bg-white dark:bg-[#1A1A24] text-gray-400 border-gray-300 dark:border-gray-600 hover:border-green-500'
+                                }`}
+                                title="تحديد كإجابة صحيحة"
+                              >
+                                {q.correctOptionIndex === optIdx ? <Check className="w-3.5 h-3.5" /> : optionMarkers[optIdx]}
+                              </button>
+                              <input
+                                type="text"
+                                disabled={!isEditing && !!quiz}
+                                value={opt}
+                                onChange={(e) => handleUpdateOption(qIdx, optIdx, e.target.value)}
+                                placeholder={`الخيار ${optionMarkers[optIdx]}`}
+                                className="w-full bg-transparent text-xs font-medium outline-none border-none p-1"
+                              />
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
+
+                    {q.type === 'true_false' && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block">الإجابة الصحيحة</label>
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            disabled={!isEditing && !!quiz}
+                            onClick={() => handleUpdateQuestionField(qIdx, "correctOptionIndex", 0)}
+                            className={`flex-1 py-3 rounded-xl font-bold transition-all border text-sm ${
+                              q.correctOptionIndex === 0
+                                ? "bg-green-500 border-green-500 text-white"
+                                : "bg-gray-50 dark:bg-[#222230] border-gray-200 dark:border-[#2D2D3D] text-gray-500"
+                            }`}
+                          >
+                            صح
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!isEditing && !!quiz}
+                            onClick={() => handleUpdateQuestionField(qIdx, "correctOptionIndex", 1)}
+                            className={`flex-1 py-3 rounded-xl font-bold transition-all border text-sm ${
+                              q.correctOptionIndex === 1
+                                ? "bg-red-500 border-red-500 text-white"
+                                : "bg-gray-50 dark:bg-[#222230] border-gray-200 dark:border-[#2D2D3D] text-gray-500"
+                            }`}
+                          >
+                            خطأ
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {q.type === 'essay' && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-gray-500 dark:text-gray-400 block">الإجابة النموذجية (كمرجع لك)</label>
+                        <textarea
+                          disabled={!isEditing && !!quiz}
+                          value={q.correctAnswer || ""}
+                          onChange={(e) => handleUpdateQuestionField(qIdx, "correctAnswer", e.target.value)}
+                          rows={3}
+                          placeholder="اكتب الإجابة النموذجية هنا للرجوع إليها وقت التصحيح..."
+                          className="w-full text-xs font-bold p-3 bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl focus:border-[#00B4D8] dark:focus:border-[#D4AF37] outline-none resize-none"
+                        />
+                      </div>
+                    )}
 
                     {/* Scientific Explanation & Points */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -821,30 +895,53 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                         </div>
                         <p className="text-xs sm:text-sm font-black text-gray-900 dark:text-white">{q.text}</p>
                         
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-                          {q.options.map((opt, optIdx) => {
-                            const isSelectedByStudent = studentChoice === optIdx;
-                            const isCorrectAns = q.correctOptionIndex === optIdx;
-                            let btnStyle = 'bg-gray-50 dark:bg-[#0D0D12] text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-[#2D2D3D]';
-                            
-                            if (isCorrectAns) {
-                              btnStyle = 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/30';
-                            } else if (isSelectedByStudent && !isCorrectAns) {
-                              btnStyle = 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30';
-                            }
+                        {/* Choices with color states */}
+                        {(!q.type || q.type === 'multiple_choice' || q.type === 'true_false') && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                            {q.options.map((opt, optIdx) => {
+                              const isSelectedByStudent = studentChoice === optIdx;
+                              const isCorrectAns = q.correctOptionIndex === optIdx;
+                              let btnStyle = 'bg-gray-50 dark:bg-[#0D0D12] text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-[#2D2D3D]';
+                              
+                              if (isCorrectAns) {
+                                btnStyle = 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/30';
+                              } else if (isSelectedByStudent && !isCorrectAns) {
+                                btnStyle = 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30';
+                              }
 
-                            return (
-                              <div key={optIdx} className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-between border ${btnStyle}`}>
-                                <span className="flex items-center gap-2">
-                                  <span className="w-5 h-5 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center text-[10px]">{optionMarkers[optIdx]}</span>
-                                  {opt}
-                                </span>
-                                {isCorrectAns && <CheckCircle2 className="w-4 h-4 text-green-500" />}
-                                {isSelectedByStudent && !isCorrectAns && <X className="w-4 h-4 text-red-500" />}
+                              return (
+                                <div key={optIdx} className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-between border ${btnStyle}`}>
+                                  <span className="flex items-center gap-2">
+                                    {q.type !== 'true_false' && <span className="w-5 h-5 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center text-[10px] font-sans">{optionMarkers[optIdx]}</span>}
+                                    {opt}
+                                  </span>
+                                  {isCorrectAns && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                                  {isSelectedByStudent && !isCorrectAns && <X className="w-4 h-4 text-red-500" />}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        
+                        {q.type === 'essay' && (
+                          <div className="pt-2 space-y-3">
+                            <div className="bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] p-3 rounded-xl">
+                              <span className="text-[10px] font-bold text-gray-400 block mb-1">إجابة الطالب:</span>
+                              <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                {/* TODO: Essay answer from student */}
+                                (الأسئلة المقالية في طور التحديث - ستظهر الإجابة قريباً)
+                              </p>
+                            </div>
+                            {q.correctAnswer && (
+                              <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-900/30 p-3 rounded-xl">
+                                <span className="text-[10px] font-bold text-green-600 dark:text-green-400 block mb-1">الإجابة النموذجية:</span>
+                                <p className="text-xs font-medium text-green-800 dark:text-green-300">
+                                  {q.correctAnswer}
+                                </p>
                               </div>
-                            );
-                          })}
-                        </div>
+                            )}
+                          </div>
+                        )}
                         {q.explanation && (
                           <div className="bg-blue-50/50 dark:bg-blue-950/20 border-r-2 border-[#00B4D8] dark:border-[#D4AF37] p-3 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-300">
                             <strong>💡 التفسير العلمي: </strong>
@@ -1353,31 +1450,53 @@ export default function QuizSection({ courseId, lessonId, lessonTitle, userData,
                       </div>
                       <p className="text-xs sm:text-sm font-black text-gray-900 dark:text-white leading-relaxed">{q.text}</p>
                       
-                      {/* MCQ choices with color states */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-                        {q.options.map((opt, optIdx) => {
-                          const isSelectedByStudent = studentChoice === optIdx;
-                          const isCorrectAns = q.correctOptionIndex === optIdx;
-                          let btnStyle = 'bg-gray-50 dark:bg-[#0D0D12] text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-[#2D2D3D]';
-                          
-                          if (isCorrectAns) {
-                            btnStyle = 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/30';
-                          } else if (isSelectedByStudent && !isCorrectAns) {
-                            btnStyle = 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30';
-                          }
+                      {/* Choices with color states */}
+                      {(!q.type || q.type === 'multiple_choice' || q.type === 'true_false') && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                          {q.options.map((opt, optIdx) => {
+                            const isSelectedByStudent = studentChoice === optIdx;
+                            const isCorrectAns = q.correctOptionIndex === optIdx;
+                            let btnStyle = 'bg-gray-50 dark:bg-[#0D0D12] text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-[#2D2D3D]';
+                            
+                            if (isCorrectAns) {
+                              btnStyle = 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/30';
+                            } else if (isSelectedByStudent && !isCorrectAns) {
+                              btnStyle = 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30';
+                            }
 
-                          return (
-                            <div key={optIdx} className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-between border ${btnStyle}`}>
-                              <span className="flex items-center gap-2">
-                                <span className="w-5 h-5 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center text-[10px] font-sans">{optionMarkers[optIdx]}</span>
-                                {opt}
-                              </span>
-                              {isCorrectAns && <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />}
-                              {isSelectedByStudent && !isCorrectAns && <X className="w-4 h-4 text-red-500 shrink-0" />}
+                            return (
+                              <div key={optIdx} className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-between border ${btnStyle}`}>
+                                <span className="flex items-center gap-2">
+                                  {q.type !== 'true_false' && <span className="w-5 h-5 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center text-[10px] font-sans">{optionMarkers[optIdx]}</span>}
+                                  {opt}
+                                </span>
+                                {isCorrectAns && <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />}
+                                {isSelectedByStudent && !isCorrectAns && <X className="w-4 h-4 text-red-500 shrink-0" />}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      
+                      {q.type === 'essay' && (
+                        <div className="pt-2 space-y-3">
+                          <div className="bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] p-3 rounded-xl">
+                            <span className="text-[10px] font-bold text-gray-400 block mb-1">إجابة الطالب:</span>
+                            <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                              {/* TODO: Essay answer from student */}
+                              (الأسئلة المقالية في طور التحديث - ستظهر الإجابة قريباً)
+                            </p>
+                          </div>
+                          {q.correctAnswer && (
+                            <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-900/30 p-3 rounded-xl">
+                              <span className="text-[10px] font-bold text-green-600 dark:text-green-400 block mb-1">الإجابة النموذجية:</span>
+                              <p className="text-xs font-medium text-green-800 dark:text-green-300">
+                                {q.correctAnswer}
+                              </p>
                             </div>
-                          );
-                        })}
-                      </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* Explanation box */}
                       {q.explanation && (

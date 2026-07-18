@@ -2,9 +2,9 @@ import React from "react";
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Lock, ArrowRight, Plus, Trash2, Video, BookOpen, Clock, Edit2, X, Upload, Star, AlertTriangle, FileText, Save, Check, Loader2, History, Award, Calendar, Download, Sparkles, Heart, ThumbsUp, MessageSquare, Reply, Send, ShieldAlert, Copy } from 'lucide-react';
+import { Play, Lock, ArrowRight, Plus, Trash2, Video, BookOpen, Clock, Edit2, X, Upload, Star, AlertTriangle, FileText, Save, Check, Loader2, History, Award, Calendar, Download, Sparkles, Heart, ThumbsUp, MessageSquare, Reply, Send, ShieldAlert, Copy, Wallet } from 'lucide-react';
 import { doc, getDoc, updateDoc, arrayUnion, increment, collection, query, where, getDocs, setDoc, addDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { User, Course, Lesson, Review, LessonNote } from '../types';
 import ThemeToggle from './ThemeToggle';
 import { uploadChunkedFile, compressImageToBase64 } from '../lib/upload';
@@ -21,7 +21,6 @@ export default function CourseDetails() {
   const location = useLocation();
   const [course, setCourse] = useState<Course | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [recordedStreams, setRecordedStreams] = useState<any[]>([]);
   const [userData, setUserData] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [lessonProgressMap, setLessonProgressMap] = useState<Record<string, any>>({});
@@ -96,6 +95,10 @@ export default function CourseDetails() {
   const [paymentUploadProgress, setPaymentUploadProgress] = useState(0);
   const [vodafoneCashNumber, setVodafoneCashNumber] = useState('01012345678');
   const [copiedNumber, setCopiedNumber] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'vodafone' | 'wallet'>('wallet');
+  const [isPayingWithWallet, setIsPayingWithWallet] = useState(false);
+  const [showDeleteCourseModal, setShowDeleteCourseModal] = useState(false);
+  const [isDeletingCourse, setIsDeletingCourse] = useState(false);
 
   // Notes state
   const [lessonTab, setLessonTab] = useState<'info' | 'quiz' | 'notes' | 'pomodoro'>('info');
@@ -277,19 +280,6 @@ export default function CourseDetails() {
           fetchedLessons.sort((a, b) => a.order - b.order);
           setLessons(fetchedLessons);
 
-          const streamsQ = query(
-            collection(db, 'live_streams'),
-            where('courseId', '==', id)
-          );
-          const streamsSnap = await getDocs(streamsQ);
-          const fetchedStreams: any[] = [];
-          streamsSnap.forEach((doc) => {
-            if (doc.data().status === 'ended') {
-              fetchedStreams.push({ id: doc.id, ...doc.data() });
-            }
-          });
-          fetchedStreams.sort((a, b) => (b.endedAt || b.startedAt || '').localeCompare(a.endedAt || a.startedAt || ''));
-          setRecordedStreams(fetchedStreams);
 
           const reviewsQ = query(collection(db, "reviews"), where("courseId", "==", id));
           const reviewsSnap = await getDocs(reviewsQ);
@@ -673,6 +663,31 @@ export default function CourseDetails() {
     }
   }, [activeLesson, lessonProgressMap]);
 
+  // Auto-save generic progress for all lessons (including YouTube/external)
+  useEffect(() => {
+    const isTeacher = userData?.id === course?.teacherId;
+    if (userData?.role !== "student" || isTeacher || !activeLesson || !course) return;
+    
+    const interval = setInterval(() => {
+      if (!completedLessons.includes(activeLesson.id)) {
+        // If not completed, we auto-save that they are viewing it.
+        // For external videos where we don't have exact duration, we just update the lastWatched timestamp
+        try {
+          setDoc(doc(db, "course_progress", `${userData.id}_${course.id}`), {
+            userId: userData.id,
+            courseId: course.id,
+            lastWatchedAt: new Date().toISOString(),
+            lastWatchedLessonId: activeLesson.id,
+          }, { merge: true });
+        } catch(err) {
+          console.error("Error auto-saving course progress:", err);
+        }
+      }
+    }, 15000); // Auto-save every 15 seconds
+    
+    return () => clearInterval(interval);
+  }, [activeLesson, userData, course, completedLessons]);
+
   if (loading) {
     return <LuxuriousLoader fullScreen size="lg" text="جاري تحميل تفاصيل الكورس..." />;
   }
@@ -893,6 +908,108 @@ export default function CourseDetails() {
     }
   };
 
+  const handleWalletPayment = async () => {
+    if (!userData || !course || isPayingWithWallet) return;
+    
+    const userBalance = userData.balance || 0;
+    const coursePrice = course.price || 0;
+
+    if (userBalance < coursePrice) {
+      toast.error(
+        <div className="flex flex-col gap-1">
+          <span className="font-black text-xs">عذراً، رصيدك غير كافٍ! ❌</span>
+          <span className="text-[10px] font-medium opacity-80">رصيدك الحالي هو {userBalance} ج.م فقط، بينما سعر الكورس هو {coursePrice} ج.م.</span>
+        </div>,
+        { duration: 4000 }
+      );
+      return;
+    }
+
+    setIsPayingWithWallet(true);
+    try {
+      const newBalance = userBalance - coursePrice;
+      
+      // 1. Update user balance
+      try {
+        await updateDoc(doc(db, "users", userData.id), {
+          balance: newBalance
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `users/${userData.id}`);
+      }
+
+      // 2. Add enrollment (similar to handleEnroll)
+      try {
+        await updateDoc(doc(db, "courses", course.id), {
+          enrolledStudents: increment(1),
+          enrolledStudentIds: arrayUnion(userData.id)
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `courses/${course.id}`);
+      }
+
+      try {
+        await setDoc(doc(db, "course_progress", `${userData.id}_${course.id}`), {
+          userId: userData.id,
+          courseId: course.id,
+          lastWatchedAt: new Date().toISOString()
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `course_progress/${userData.id}_${course.id}`);
+      }
+
+      // 3. Create transaction record
+      try {
+        await addDoc(collection(db, "wallet_transactions"), {
+          userId: userData.id,
+          userName: userData.name,
+          amount: -coursePrice,
+          type: 'course_purchase',
+          description: `شراء كورس: ${course.title}`,
+          createdAt: new Date().toISOString()
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, "wallet_transactions");
+      }
+
+      // 4. Notify teacher
+      try {
+        await addDoc(collection(db, "notifications"), {
+          userId: course.teacherId,
+          title: "مشترك جديد (دفع محفظة)",
+          message: `اشترك الطالب ${userData.name} في كورس ${course.title} عبر رصيد المحفظة`,
+          read: false,
+          createdAt: new Date().toISOString(),
+          type: "enrollment"
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, "notifications");
+      }
+
+      // Update local state
+      setUserData({ ...userData, balance: newBalance });
+      setCourse({ 
+        ...course, 
+        enrolledStudents: (course.enrolledStudents || 0) + 1, 
+        enrolledStudentIds: [...(course.enrolledStudentIds || []), userData.id] 
+      });
+
+      toast.success("تم الاشتراك في الكورس بنجاح وخصم المبلغ من محفظتك! ✨");
+      setShowPaymentModal(false);
+      confetti({
+        particleCount: 150,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+
+    } catch (error: any) {
+      console.error("Wallet payment error:", error);
+      toast.error("حدث خطأ أثناء عملية الدفع: " + (error.message || 'يرجى المحاولة مرة أخرى'));
+    } finally {
+      setIsPayingWithWallet(false);
+    }
+  };
+
   const handleCopyNumber = () => {
     navigator.clipboard.writeText(vodafoneCashNumber);
     setCopiedNumber(true);
@@ -985,6 +1102,22 @@ export default function CourseDetails() {
     }
   };
 
+  const handleDeleteCourse = async () => {
+    if (!id || !course) return;
+    setIsDeletingCourse(true);
+    try {
+      await deleteDoc(doc(db, 'courses', id));
+      toast.success('تم حذف الكورس نهائياً بنجاح 🗑️');
+      navigate('/dashboard');
+    } catch (err) {
+      console.error('Error deleting course:', err);
+      toast.error('فشل في حذف الكورس');
+    } finally {
+      setIsDeletingCourse(false);
+      setShowDeleteCourseModal(false);
+    }
+  };
+
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0D0D12] text-gray-900 dark:text-white font-sans selection:bg-[#00B4D8]/30 dark:selection:bg-[#D4AF37]/30">
@@ -1008,6 +1141,15 @@ export default function CourseDetails() {
               {reviews.length > 0 ? (reviews.reduce((a, b) => a + b.rating, 0) / reviews.length).toFixed(1) : "جديد"}
             </div>
             <ThemeToggle />
+            {userData?.role === 'admin' && (
+              <button
+                onClick={() => setShowDeleteCourseModal(true)}
+                className="p-2.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl transition-all shadow-sm border border-red-100 dark:border-red-900/30 cursor-pointer"
+                title="حذف الكورس نهائياً"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -1191,12 +1333,6 @@ export default function CourseDetails() {
                   >
                     الدروس ({lessons.length})
                   </button>
-                  <button
-                    onClick={() => setContentTab('recordings')}
-                    className={`flex-1 py-2 text-xs font-black rounded-lg transition-all cursor-pointer ${contentTab === 'recordings' ? 'bg-white dark:bg-[#2D2D3D] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
-                  >
-                    البثوث المسجلة ({recordedStreams.length})
-                  </button>
                 </div>
               </div>
 
@@ -1288,13 +1424,13 @@ export default function CourseDetails() {
                     ))
                   )
                 ) : (
-                  recordedStreams.length === 0 ? (
+                  0 === 0 ? (
                     <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                       <Video className="w-12 h-12 mx-auto mb-3 opacity-30 text-gray-400" />
                       <p className="font-bold text-xs">لا توجد حصص مسجلة</p>
                     </div>
                   ) : (
-                    recordedStreams.map((stream, idx) => (
+                    [].map((stream, idx) => (
                       <div 
                         key={stream.id}
                         className="p-3 bg-gray-50 dark:bg-[#222230] rounded-2xl border border-gray-100 dark:border-[#2D2D3D] space-y-2 text-right"
@@ -2474,6 +2610,56 @@ export default function CourseDetails() {
           </div>
         )}
 
+      {/* Delete Course Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteCourseModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white dark:bg-[#1A1A24] border border-gray-150 dark:border-[#2D2D3D] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6 relative text-right"
+              dir="rtl"
+            >
+              <div className="w-16 h-16 bg-red-100 dark:bg-red-950/30 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <ShieldAlert className="w-8 h-8" />
+              </div>
+              
+              <div className="text-center space-y-2 mb-6">
+                <h3 className="text-lg font-black text-gray-900 dark:text-white">تأكيد حذف الكورس نهائياً</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-bold">
+                  هل أنت متأكد من رغبتك في حذف كورس <span className="text-red-500">"{course?.title}"</span> للأبد من السيستم؟
+                </p>
+                <div className="bg-red-50 dark:bg-red-950/20 p-3 rounded-2xl border border-red-100 dark:border-red-900/30">
+                  <p className="text-[11px] text-red-600 dark:text-red-400 font-bold leading-relaxed">
+                    ⚠️ تنبيه: سيتم حذف كافة الدروس والمرفقات والطلاب المسجلين من الكورس. لا يمكن التراجع عن هذا الإجراء!
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={isDeletingCourse}
+                  onClick={handleDeleteCourse}
+                  className="flex-1 py-3 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white rounded-2xl font-black text-xs transition-all shadow-lg shadow-red-500/20 flex items-center justify-center gap-2 cursor-pointer border-0"
+                >
+                  {isDeletingCourse ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  <span>نعم، احذف الكورس</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteCourseModal(false)}
+                  className="flex-1 py-3 bg-gray-100 dark:bg-[#2D2D3D] text-gray-600 dark:text-gray-300 rounded-2xl font-black text-xs hover:bg-gray-200 dark:hover:bg-[#333] transition-all"
+                >
+                  تراجع
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
         {showPaymentModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
             <motion.div 
@@ -2484,153 +2670,261 @@ export default function CourseDetails() {
               dir="rtl"
             >
               {/* Header */}
-              <div className="px-6 py-4 border-b border-gray-100 dark:border-[#2D2D3D] flex items-center justify-between bg-gray-50/50 dark:bg-[#1C1C28]/50">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-rose-50 dark:bg-rose-950/30 rounded-xl text-rose-500">
-                    <span className="text-xl">💰</span>
-                  </div>
-                  <div>
-                    <h3 className="font-black text-sm text-gray-900 dark:text-white">الاشتراك عبر فودافون كاش</h3>
-                    <p className="text-[10px] font-bold text-gray-400">تفعيل يدوي وسريع وآمن للكورس</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowPaymentModal(false)}
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-[#2D2D3D] rounded-full transition-colors text-gray-500 cursor-pointer bg-transparent border-0"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Form */}
-              <form onSubmit={handlePaymentSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
-                {/* Vodafone Cash Details */}
-                <div className="bg-rose-50/50 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-rose-600 dark:text-rose-400">تحويل فودافون كاش (Vodafone Cash):</span>
-                    <span className="text-[11px] font-black bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 px-2 py-0.5 rounded-lg font-sans">
-                      {course.price} ج.م
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between bg-white dark:bg-[#0D0D12] border border-rose-100 dark:border-rose-950 rounded-xl p-3">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-gray-400">الرقم المخصص للتحويل</span>
-                      <span className="text-base font-black text-gray-900 dark:text-white font-sans tracking-wider" dir="ltr">
-                        {vodafoneCashNumber}
-                      </span>
+              <div className="px-6 py-5 border-b border-gray-100 dark:border-[#2D2D3D] bg-gray-50/50 dark:bg-[#1C1C28]/50">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 rounded-xl text-[#00B4D8] dark:text-[#D4AF37]">
+                      <Plus className="w-5 h-5" />
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleCopyNumber}
-                      className="p-2.5 bg-gray-50 hover:bg-rose-50 dark:bg-[#1A1A24] dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-xl transition-all active:scale-95 cursor-pointer border border-gray-100 dark:border-[#2D2D3D]"
-                      title="نسخ الرقم"
-                    >
-                      {copiedNumber ? <Check className="w-4 h-4 stroke-[3px]" /> : <Copy className="w-4 h-4" />}
-                    </button>
+                    <div>
+                      <h3 className="font-black text-sm text-gray-900 dark:text-white">طرق الاشتراك المتاحة</h3>
+                      <p className="text-[10px] font-bold text-gray-400">اختر الوسيلة المناسبة لك لتفعيل الكورس</p>
+                    </div>
                   </div>
-                  
-                  <p className="text-[10.5px] font-bold text-gray-500 dark:text-gray-400 leading-relaxed text-right">
-                    ⚠️ يرجى تحويل مبلغ الكورس كاملاً وهو <span className="font-extrabold text-rose-600 dark:text-rose-400">{course.price} ج.م</span> إلى الرقم الموضح أعلاه، ثم ملء البيانات أدناه لرفع إثبات التحويل وتفعيل الكورس من الإدارة.
-                  </p>
-                </div>
-
-                {/* Sender Full Name */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-gray-700 dark:text-gray-200 block">اسمك بالكامل (اسم الطالب):</label>
-                  <input
-                    type="text"
-                    required
-                    value={paymentSenderName}
-                    onChange={(e) => setPaymentSenderName(e.target.value)}
-                    placeholder="أدخل اسمك ثلاثياً أو رباعياً لسهولة المطابقة..."
-                    className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-xs font-sans"
-                  />
-                </div>
-
-                {/* Sender Phone Number */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-gray-700 dark:text-gray-200 block">رقم الهاتف المحول منه (محفظة التحويل):</label>
-                  <input
-                    type="tel"
-                    required
-                    value={paymentSenderPhone}
-                    onChange={(e) => setPaymentSenderPhone(e.target.value)}
-                    placeholder="مثال: 01012345678"
-                    className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-xs font-sans text-right"
-                    dir="ltr"
-                  />
-                </div>
-
-                {/* Screenshot Upload */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-black text-gray-700 dark:text-gray-200 block">إرفاق لقطة شاشة التحويل (إسكرين الإثبات):</label>
-                  <div 
-                    onClick={() => {
-                      const el = document.getElementById('payment-screenshot-input');
-                      el?.click();
-                    }}
-                    className="w-full h-40 border-2 border-dashed border-gray-300 dark:border-[#2D2D3D] rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 dark:hover:bg-[#13131C] transition-all relative overflow-hidden p-4 group"
-                  >
-                    {paymentScreenshotPreview ? (
-                      <div className="w-full h-full relative">
-                        <img 
-                          src={paymentScreenshotPreview} 
-                          alt="إسكرين التحويل" 
-                          className="w-full h-full object-contain"
-                        />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-black gap-1.5">
-                          <Upload className="w-4 h-4" /> تغيير الصورة
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center text-gray-500 dark:text-gray-400">
-                        <div className="p-3 bg-gray-100 dark:bg-[#1A1A24] rounded-2xl mb-2 text-rose-500">
-                          <Upload className="w-6 h-6" />
-                        </div>
-                        <span className="text-xs font-black text-gray-700 dark:text-gray-300">اضغط لرفع لقطة الشاشة</span>
-                        <span className="text-[10px] text-gray-400 mt-1">يُقبل الصور (PNG, JPG, JPEG)</span>
-                      </div>
-                    )}
-                    <input
-                      id="payment-screenshot-input"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleScreenshotChange}
-                      className="hidden"
-                    />
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="pt-4 flex items-center justify-end gap-3 border-t border-gray-100 dark:border-[#2D2D3D]">
                   <button
                     type="button"
                     onClick={() => setShowPaymentModal(false)}
-                    className="px-5 py-2.5 rounded-xl border border-gray-200 dark:border-[#2D2D3D] hover:bg-gray-100 dark:hover:bg-[#222230] text-gray-700 dark:text-gray-300 text-xs font-black transition-colors cursor-pointer bg-transparent"
+                    className="p-1.5 hover:bg-gray-100 dark:hover:bg-[#2D2D3D] rounded-full transition-colors text-gray-500 cursor-pointer bg-transparent border-0"
                   >
-                    إلغاء
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submittingPayment}
-                    className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-2.5 rounded-xl font-black text-xs shadow-md disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5 border-0"
-                  >
-                    {submittingPayment ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>جاري إرسال الطلب ({paymentUploadProgress}%)...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5 stroke-[3px]" />
-                        <span>تأكيد التحويل وإرسال الطلب</span>
-                      </>
-                    )}
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
-              </form>
+
+                {/* Method Selector Tabs */}
+                <div className="flex p-1 bg-gray-100 dark:bg-[#0D0D12] rounded-2xl border border-gray-200 dark:border-[#2D2D3D]">
+                  <button
+                    onClick={() => setPaymentMethod('wallet')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black transition-all ${
+                      paymentMethod === 'wallet' 
+                        ? 'bg-white dark:bg-[#1A1A24] text-[#00B4D8] dark:text-[#D4AF37] shadow-sm' 
+                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    <Wallet className="w-4 h-4" />
+                    رصيد المحفظة
+                  </button>
+                  <button
+                    onClick={() => setPaymentMethod('vodafone')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black transition-all ${
+                      paymentMethod === 'vodafone' 
+                        ? 'bg-white dark:bg-[#1A1A24] text-rose-500 shadow-sm' 
+                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    <span className="text-base">💰</span>
+                    فودافون كاش
+                  </button>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto">
+                <AnimatePresence mode="wait">
+                  {paymentMethod === 'wallet' ? (
+                    <motion.div
+                      key="wallet-tab"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="p-6 space-y-6"
+                    >
+                      <div className="bg-blue-50/50 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/30 rounded-3xl p-6 text-center space-y-4">
+                        <div className="w-16 h-16 bg-white dark:bg-[#0D0D12] rounded-2xl flex items-center justify-center mx-auto shadow-sm border border-blue-100 dark:border-blue-900/30">
+                          <Wallet className="w-8 h-8 text-[#00B4D8] dark:text-[#D4AF37]" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-gray-500 dark:text-gray-400">رصيدك الحالي في المحفظة</p>
+                          <h4 className="text-3xl font-black text-gray-900 dark:text-white font-sans mt-1">
+                            {userData?.balance || 0} <span className="text-sm font-bold opacity-60">ج.م</span>
+                          </h4>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between p-4 rounded-2xl bg-gray-50 dark:bg-[#0D0D12] border border-gray-100 dark:border-[#2D2D3D]">
+                          <span className="text-xs font-bold text-gray-500">سعر الكورس:</span>
+                          <span className="text-sm font-black text-gray-900 dark:text-white">{course.price} ج.م</span>
+                        </div>
+
+                        {userData && (userData.balance || 0) < (course.price || 0) ? (
+                          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 flex gap-3">
+                            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-500 shrink-0" />
+                            <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400 leading-relaxed">
+                              عذراً، رصيدك الحالي لا يكفي لإتمام عملية الشراء. يرجى شحن محفظتك أولاً أو استخدام طريقة دفع أخرى.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30 flex gap-3">
+                            <Check className="w-5 h-5 text-emerald-600 dark:text-emerald-500 shrink-0" />
+                            <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 leading-relaxed">
+                              رصيدك كافٍ! سيتم تفعيل الكورس فوراً عند تأكيد العملية وخصم المبلغ من محفظتك.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-4 flex flex-col gap-3">
+                        <button
+                          onClick={handleWalletPayment}
+                          disabled={isPayingWithWallet || (userData?.balance || 0) < (course.price || 0)}
+                          className="w-full bg-[#00B4D8] dark:bg-[#D4AF37] hover:bg-[#0077B6] dark:hover:bg-[#B8860B] text-white dark:text-[#0D0D12] py-4 rounded-2xl font-black text-sm shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/10 disabled:opacity-50 disabled:grayscale transition-all flex items-center justify-center gap-2 cursor-pointer border-0"
+                        >
+                          {isPayingWithWallet ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>جاري إتمام الدفع...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Check className="w-4 h-4 stroke-[3px]" />
+                              <span>تأكيد الدفع والاشتراك الآن</span>
+                            </>
+                          )}
+                        </button>
+                        <p className="text-[10px] text-center font-bold text-gray-400">
+                          بضغطك على تأكيد الدفع، سيتم تفعيل الكورس في حسابك فوراً.
+                        </p>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="vodafone-tab"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                    >
+                      {/* Form */}
+                      <form onSubmit={handlePaymentSubmit} className="p-6 space-y-5">
+                        {/* Vodafone Cash Details */}
+                        <div className="bg-rose-50/50 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-2xl p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-rose-600 dark:text-rose-400">تحويل فودافون كاش (Vodafone Cash):</span>
+                            <span className="text-[11px] font-black bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 px-2 py-0.5 rounded-lg font-sans">
+                              {course.price} ج.م
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center justify-between bg-white dark:bg-[#0D0D12] border border-rose-100 dark:border-rose-950 rounded-xl p-3">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] font-bold text-gray-400">الرقم المخصص للتحويل</span>
+                              <span className="text-base font-black text-gray-900 dark:text-white font-sans tracking-wider" dir="ltr">
+                                {vodafoneCashNumber}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleCopyNumber}
+                              className="p-2.5 bg-gray-50 hover:bg-rose-50 dark:bg-[#1A1A24] dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 rounded-xl transition-all active:scale-95 cursor-pointer border border-gray-100 dark:border-[#2D2D3D]"
+                              title="نسخ الرقم"
+                            >
+                              {copiedNumber ? <Check className="w-4 h-4 stroke-[3px]" /> : <Copy className="w-4 h-4" />}
+                            </button>
+                          </div>
+                          
+                          <p className="text-[10.5px] font-bold text-gray-500 dark:text-gray-400 leading-relaxed text-right">
+                            ⚠️ يرجى تحويل مبلغ الكورس كاملاً وهو <span className="font-extrabold text-rose-600 dark:text-rose-400">{course.price} ج.م</span> إلى الرقم الموضح أعلاه، ثم ملء البيانات أدناه لرفع إثبات التحويل وتفعيل الكورس من الإدارة.
+                          </p>
+                        </div>
+
+                        {/* Sender Full Name */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-black text-gray-700 dark:text-gray-200 block">اسمك بالكامل (اسم الطالب):</label>
+                          <input
+                            type="text"
+                            required
+                            value={paymentSenderName}
+                            onChange={(e) => setPaymentSenderName(e.target.value)}
+                            placeholder="أدخل اسمك ثلاثياً أو رباعياً لسهولة المطابقة..."
+                            className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-xs font-sans"
+                          />
+                        </div>
+
+                        {/* Sender Phone Number */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-black text-gray-700 dark:text-gray-200 block">رقم الهاتف المحول منه (محفظة التحويل):</label>
+                          <input
+                            type="tel"
+                            required
+                            value={paymentSenderPhone}
+                            onChange={(e) => setPaymentSenderPhone(e.target.value)}
+                            placeholder="مثال: 01012345678"
+                            className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37] dark:text-white font-bold text-xs font-sans text-right"
+                            dir="ltr"
+                          />
+                        </div>
+
+                        {/* Screenshot Upload */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-black text-gray-700 dark:text-gray-200 block">إرفاق لقطة شاشة التحويل (إسكرين الإثبات):</label>
+                          <div 
+                            onClick={() => {
+                              const el = document.getElementById('payment-screenshot-input');
+                              el?.click();
+                            }}
+                            className="w-full h-40 border-2 border-dashed border-gray-300 dark:border-[#2D2D3D] rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 dark:hover:bg-[#13131C] transition-all relative overflow-hidden p-4 group"
+                          >
+                            {paymentScreenshotPreview ? (
+                              <div className="w-full h-full relative">
+                                <img 
+                                  src={paymentScreenshotPreview} 
+                                  alt="إسكرين التحويل" 
+                                  className="w-full h-full object-contain"
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-black gap-1.5">
+                                  <Upload className="w-4 h-4" /> تغيير الصورة
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center text-gray-500 dark:text-gray-400">
+                                <div className="p-3 bg-gray-100 dark:bg-[#1A1A24] rounded-2xl mb-2 text-rose-500">
+                                  <Upload className="w-6 h-6" />
+                                </div>
+                                <span className="text-xs font-black text-gray-700 dark:text-gray-300">اضغط لرفع لقطة الشاشة</span>
+                                <span className="text-[10px] text-gray-400 mt-1">يُقبل الصور (PNG, JPG, JPEG)</span>
+                              </div>
+                            )}
+                            <input
+                              id="payment-screenshot-input"
+                              type="file"
+                              accept="image/*"
+                              onChange={handleScreenshotChange}
+                              className="hidden"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="pt-4 flex items-center justify-end gap-3 border-t border-gray-100 dark:border-[#2D2D3D]">
+                          <button
+                            type="button"
+                            onClick={() => setShowPaymentModal(false)}
+                            className="px-5 py-2.5 rounded-xl border border-gray-200 dark:border-[#2D2D3D] hover:bg-gray-100 dark:hover:bg-[#222230] text-gray-700 dark:text-gray-300 text-xs font-black transition-colors cursor-pointer bg-transparent"
+                          >
+                            إلغاء
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={submittingPayment}
+                            className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-2.5 rounded-xl font-black text-xs shadow-md disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5 border-0"
+                          >
+                            {submittingPayment ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>جاري إرسال الطلب ({paymentUploadProgress}%)...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-3.5 h-3.5 stroke-[3px]" />
+                                <span>تأكيد التحويل وإرسال الطلب</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </form>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </motion.div>
           </div>
         )}

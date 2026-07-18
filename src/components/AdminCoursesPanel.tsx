@@ -4,7 +4,7 @@ import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc } 
 import { Course, User } from '../types';
 import { 
   BookOpen, Users, ShieldAlert, CheckCircle, XCircle, Search, 
-  DollarSign, Edit2, ChevronLeft, Trash2, ShieldCheck, Filter, UserX, Award, HelpCircle
+  DollarSign, Edit2, ChevronLeft, Trash2, ShieldCheck, Filter, UserX, Award, HelpCircle, Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
@@ -26,6 +26,8 @@ export default function AdminCoursesPanel() {
   const [studentSearchQuery, setStudentSearchQuery] = useState('');
   const [editingPriceCourse, setEditingPriceCourse] = useState<Course | null>(null);
   const [newPrice, setNewPrice] = useState('');
+  const [courseToDelete, setCourseToDelete] = useState<Course | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const gradesList = ['الأول الثانوي', 'الثاني الثانوي', 'الثالث الثانوي'];
 
@@ -137,6 +139,24 @@ export default function AdminCoursesPanel() {
     } catch (err) {
       console.error('Error updating student:', err);
       toast.error('حدث خطأ أثناء تحديث بيانات الطالب');
+    }
+  };
+
+  const handleDeleteCourse = async () => {
+    if (!courseToDelete) return;
+    setIsDeleting(true);
+    try {
+      const { deleteDoc, doc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'courses', courseToDelete.id));
+      
+      setCourses(prev => prev.filter(c => c.id !== courseToDelete.id));
+      toast.success('تم حذف الكورس نهائياً بنجاح 🗑️');
+      setCourseToDelete(null);
+    } catch (err) {
+      console.error('Error deleting course:', err);
+      toast.error('فشل في حذف الكورس');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -390,6 +410,15 @@ export default function AdminCoursesPanel() {
                     <Users className="w-3.5 h-3.5" />
                     <span>الطلاب ({course.enrolledStudents || 0})</span>
                   </button>
+
+                  {/* Delete Course Button */}
+                  <button
+                    onClick={() => setCourseToDelete(course)}
+                    className="p-2 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-xl transition-all"
+                    title="حذف الكورس نهائياً"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </motion.div>
             );
@@ -447,6 +476,56 @@ export default function AdminCoursesPanel() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Course Confirmation Modal */}
+      <AnimatePresence>
+        {courseToDelete && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white dark:bg-[#1A1A24] border border-gray-150 dark:border-[#2D2D3D] rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6 relative text-right"
+              dir="rtl"
+            >
+              <div className="w-16 h-16 bg-red-100 dark:bg-red-950/30 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <ShieldAlert className="w-8 h-8" />
+              </div>
+              
+              <div className="text-center space-y-2 mb-6">
+                <h3 className="text-lg font-black text-gray-900 dark:text-white">تأكيد حذف الكورس نهائياً</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-bold">
+                  هل أنت متأكد من رغبتك في حذف كورس <span className="text-red-500">"{courseToDelete.title}"</span> للأبد؟
+                </p>
+                <div className="bg-red-50 dark:bg-red-950/20 p-3 rounded-2xl border border-red-100 dark:border-red-900/30">
+                  <p className="text-[11px] text-red-600 dark:text-red-400 font-bold leading-relaxed">
+                    ⚠️ تنبيه: هذا الإجراء سيقوم بمسح كافة بيانات الكورس من قاعدة البيانات. الطلاب المشتركين لن يتمكنوا من الوصول إليه مرة أخرى!
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleDeleteCourse}
+                  className="flex-1 py-3 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white rounded-2xl font-black text-xs transition-all shadow-lg shadow-red-500/20 flex items-center justify-center gap-2 cursor-pointer border-0"
+                >
+                  {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  <span>نعم، احذف الكورس</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCourseToDelete(null)}
+                  className="flex-1 py-3 bg-gray-100 dark:bg-[#2D2D3D] text-gray-600 dark:text-gray-300 rounded-2xl font-black text-xs hover:bg-gray-200 dark:hover:bg-[#333] transition-all"
+                >
+                  تراجع
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

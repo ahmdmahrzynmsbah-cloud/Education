@@ -7,7 +7,7 @@ import { collection, query, where, getDocs, addDoc, serverTimestamp, deleteDoc, 
 import { db } from '../lib/firebase';
 import { User, Course } from '../types';
 import LuxuriousLoader from './LuxuriousLoader';
-import { uploadChunkedFile } from '../lib/upload';
+import { compressImageToBase64 } from '../lib/upload';
 import { toast, Toaster } from 'react-hot-toast';
 
 interface TeacherClassesProps {
@@ -96,9 +96,7 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
     try {
       let imageUrl = '';
       if (imageFile) {
-        imageUrl = await uploadChunkedFile(imageFile, (progress) => {
-          setUploadProgress(progress);
-        });
+        imageUrl = await compressImageToBase64(imageFile, 800, 600);
       }
 
       const newCourseData = {
@@ -286,8 +284,8 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
         suspendedStudentIds: newSuspended
       });
       
-      setCourseStudents(courseStudents.filter(u => u.id !== studentId));
-      setCourses(courses.map(c => 
+      setCourseStudents(prev => prev.filter(u => u.id !== studentId));
+      setCourses(prev => prev.map(c => 
         c.id === selectedCourseForStudents.id 
           ? { ...c, enrolledStudents: newEnrolled.length, enrolledStudentIds: newEnrolled, suspendedStudentIds: newSuspended }
           : c
@@ -587,7 +585,25 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
                       <h3 className="text-xl font-black text-gray-900 dark:text-white flex items-center gap-2">
                         {selectedStudentDetails.name}
                       </h3>
-                      <p className="text-sm font-bold text-gray-500">{selectedStudentDetails.grade || 'غير محدد'}</p>
+                      <div className="flex flex-wrap items-center gap-2 mt-1">
+                        <span className="text-xs font-black bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-lg border border-blue-100 dark:border-blue-800/30">
+                          {selectedStudentDetails.grade || 'غير محدد'}
+                        </span>
+                        {selectedStudentDetails.branch && (
+                          <span className="text-xs font-black bg-cyan-50 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400 px-2 py-0.5 rounded-lg border border-cyan-100 dark:border-cyan-800/30">
+                            {selectedStudentDetails.branch === 'science' ? 'علمي علوم' : 
+                             selectedStudentDetails.branch === 'math' ? 'علمي رياضة' : 
+                             selectedStudentDetails.branch === 'arts' ? 'أدبي' : 
+                             selectedStudentDetails.branch === 'scientific' ? 'علمي' :
+                             selectedStudentDetails.branch === 'literary' ? 'أدبي' : selectedStudentDetails.branch}
+                          </span>
+                        )}
+                        {selectedStudentDetails.educationSystem === 'azhar' && (
+                          <span className="text-xs font-black bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-800/30">
+                            أزهري
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <button
@@ -880,20 +896,7 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
                         className="hidden"
                       />
                     </div>
-                    {isSubmitting && imageFile && (
-                      <div className="space-y-1 mt-2">
-                        <div className="flex justify-between text-xs font-bold text-gray-600 dark:text-gray-300">
-                          <span>{uploadProgress === 100 ? 'جاري حفظ البيانات...' : 'جاري رفع الصورة...'}</span>
-                          <span>{Math.round(uploadProgress)}%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 dark:bg-[#2D2D3D] rounded-full h-2">
-                          <div 
-                            className="bg-[#00B4D8] dark:bg-[#D4AF37] h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${uploadProgress}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    )}
+
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -968,13 +971,7 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
                   className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:bg-[#B8860B] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isSubmitting ? (
-                    <>
-                      {imageFile && uploadProgress < 100 
-                        ? `جاري الرفع... ${Math.round(uploadProgress)}%` 
-                        : (imageFile && uploadProgress === 100) 
-                          ? 'جاري الحفظ...' 
-                          : 'جاري الإنشاء...'}
-                    </>
+                    'جاري الإنشاء...'
                   ) : (
                     'إنشاء الكورس'
                   )}

@@ -15,7 +15,7 @@ import LuxuriousLoader from "./LuxuriousLoader";
 interface ScheduleEvent {
   id: string;
   title: string;
-  type: "class" | "exam" | "live" | "revision";
+  type: "class" | "exam" | "revision";
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
   duration: number; // in minutes
@@ -48,7 +48,7 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
   // Create Event Form state (Teacher)
   const [showAddForm, setShowAddForm] = useState(false);
   const [title, setTitle] = useState("");
-  const [type, setType] = useState<"class" | "exam" | "live" | "revision">("live");
+  const [type, setType] = useState<"class" | "exam" | "revision">("class");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [duration, setDuration] = useState(60);
@@ -248,8 +248,6 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
         return { label: "حصة أسبوعية", color: "bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400 border-blue-200/50" };
       case "exam":
         return { label: "موعد اختبار شهري", color: "bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400 border-red-200/50" };
-      case "live":
-        return { label: "محاضرة لايف تفاعلية", color: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200/50" };
       case "revision":
         return { label: "حصة مراجعة نهائية", color: "bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400 border-amber-200/50" };
       default:
@@ -307,11 +305,11 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
                   className="w-full md:w-auto bg-white text-[#0077B6] dark:text-amber-800 hover:bg-opacity-90 font-black text-xs px-6 py-3 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
                 >
                   <Video className="w-4 h-4" />
-                  انضم للبث المباشر الآن 🚀
+                  انضم للاجتماع الآن 🚀
                 </a>
               ) : (
                 <span className="text-xs font-bold bg-white/10 px-4 py-2 rounded-xl border border-white/10">
-                  الحصة غير مخصصة للبث لايف عبر زوم
+                  الحصة غير مخصصة لاجتماع عبر زوم
                 </span>
               )}
             </div>
@@ -444,7 +442,6 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
                     onChange={(e) => setType(e.target.value as any)}
                     className="w-full text-xs font-bold p-3 bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-2xl focus:border-[#00B4D8] dark:focus:border-[#D4AF37] outline-none"
                   >
-                    <option value="live">محاضرة لايف (بث مباشر)</option>
                     <option value="class">حصة أسبوعية مسجلة</option>
                     <option value="exam">موعد اختبار شامل</option>
                     <option value="revision">حصة مراجعة تفاعلية</option>
@@ -491,7 +488,7 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
 
               {/* Link Zoom */}
               <div className="space-y-1.5">
-                <label className="text-xs font-black text-gray-600 dark:text-gray-300">رابط البث المباشر (زووم / جوجل ميت - اختياري)</label>
+                <label className="text-xs font-black text-gray-600 dark:text-gray-300">رابط الاجتماع (زووم / جوجل ميت - اختياري)</label>
                 <input
                   type="url"
                   value={link}
@@ -633,7 +630,6 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
 
                       // Check types of events on this day
                       const hasExam = dayEvents.some(ev => ev.type === "exam");
-                      const hasLive = dayEvents.some(ev => ev.type === "live");
                       const hasRevision = dayEvents.some(ev => ev.type === "revision");
                       const hasClass = dayEvents.some(ev => ev.type === "class");
 
@@ -661,9 +657,6 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
                             {hasExam && (
                               <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-red-500 animate-pulse" title="امتحان" />
                             )}
-                            {hasLive && (
-                              <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-500" title="بث مباشر" />
-                            )}
                             {hasRevision && (
                               <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-500" title="مراجعة" />
                             )}
@@ -682,10 +675,6 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
                   <div className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-red-500" />
                     <span>اختبارات شاملة 📝</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span>محاضرات لايف تفاعلية 🎥</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-amber-500" />
@@ -820,8 +809,7 @@ export default function InteractiveSchedule({ db, userData, coursesList }: Inter
                     <div className="w-14 h-14 rounded-2xl bg-gray-50 dark:bg-[#13131C] border border-gray-200/50 dark:border-[#2D2D3D] flex items-center justify-center shrink-0 text-gray-500 dark:text-gray-400">
                       {ev.type === "exam" ? (
                         <AlertTriangle className="w-7 h-7 text-red-500" />
-                      ) : ev.type === "live" ? (
-                        <Video className="w-7 h-7 text-emerald-500" />
+                      
                       ) : ev.type === "revision" ? (
                         <BookOpen className="w-7 h-7 text-amber-500" />
                       ) : (

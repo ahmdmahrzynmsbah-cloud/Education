@@ -1,7 +1,7 @@
 import React from "react";
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, HelpCircle, Lock, BookOpen, Star, MessageCircleQuestion, CheckCircle, Ticket, LogOut, Trophy, Flame, Bell, Target, ArrowLeft, Video, Bot, Users, Activity, User as UserIcon, Wallet, ArrowUpRight, ArrowDownLeft, Smartphone, CreditCard, PiggyBank, RefreshCw, Send, Sparkles, Loader2, DollarSign, Check, History, Award, Edit2, Edit3, Save, X, Clock, Trash2, Plus , Shield, Info } from 'lucide-react';
+import { Play, HelpCircle, Lock, BookOpen, Star, MessageCircleQuestion, CheckCircle, Ticket, LogOut, Trophy, Flame, Bell, Target, ArrowLeft, Video, Bot, Users, Activity, User as UserIcon, Wallet, ArrowUpRight, ArrowDownLeft, Smartphone, CreditCard, PiggyBank, RefreshCw, Send, Sparkles, Loader2, DollarSign, Check, History, Award, Edit2, Edit3, Save, X, Clock, Trash2, Plus , Shield, Info, Menu, ChevronRight, ChevronLeft } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, Toaster } from 'react-hot-toast';
 import ThemeToggle from './ThemeToggle';
@@ -22,9 +22,9 @@ import StudentExamTaking from './StudentExamTaking';
 import InteractiveSchedule from './InteractiveSchedule';
 import LuxuriousLoader from './LuxuriousLoader';
 import QuickNotes from './QuickNotes';
-import LiveClassroom from './LiveClassroom';
 import ComprehensiveAnalytics from './ComprehensiveAnalytics';
 import TeachersSearchList from './TeachersSearchList';
+import ParentTeachersList from './ParentTeachersList';
 import { usePlatformSettings } from '../context/PlatformSettingsContext';
 
 const MOCK_TEACHER_STATS = [
@@ -99,6 +99,7 @@ export default function Dashboard() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [linkedStudent, setLinkedStudent] = useState<any>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showPayoutForm, setShowPayoutForm] = useState(false);
   const [payoutAmount, setPayoutAmount] = useState('');
   const [payoutMethod, setPayoutMethod] = useState<'vodafone' | 'instapay' | 'bank'>('vodafone');
@@ -142,7 +143,52 @@ export default function Dashboard() {
   const [miniNoteContent, setMiniNoteContent] = useState('');
   const [miniNoteCourseId, setMiniNoteCourseId] = useState('general');
   const [savingMiniNote, setSavingMiniNote] = useState(false);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [subscribingLeague, setSubscribingLeague] = useState(false);
+
+  // Admin Stats State
+  const [adminStats, setAdminStats] = useState({
+    students: 0,
+    teachers: 0,
+    courses: 0,
+    pendingPayments: 0
+  });
+  const [loadingAdminStats, setLoadingAdminStats] = useState(false);
+
+  useEffect(() => {
+    if (userData?.role !== 'admin') return;
+    const fetchAdminStats = async () => {
+      setLoadingAdminStats(true);
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        let students = 0;
+        let teachers = 0;
+        usersSnap.forEach(doc => {
+           if (doc.data().role === 'student') students++;
+           if (doc.data().role === 'teacher') teachers++;
+        });
+
+        const coursesSnap = await getDocs(collection(db, 'courses'));
+        const courses = coursesSnap.size;
+
+        const paymentsQ = query(collection(db, 'course_payments'), where('status', '==', 'pending'));
+        const paymentsSnap = await getDocs(paymentsQ);
+        const pendingPayments = paymentsSnap.size;
+
+        setAdminStats({
+          students,
+          teachers,
+          courses,
+          pendingPayments
+        });
+      } catch(err) {
+        console.error("Error fetching admin stats:", err);
+      } finally {
+        setLoadingAdminStats(false);
+      }
+    };
+    fetchAdminStats();
+  }, [userData?.role]);
 
 
 
@@ -237,7 +283,7 @@ export default function Dashboard() {
          {loadingDashboardLeaderboard ? (
             [1, 2, 3, 4].map((num) => (
                <div key={num} className="flex items-center justify-between p-4 rounded-2xl bg-gray-50/50 dark:bg-[#0D0D12]/50 animate-pulse">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1.5 md:gap-4 shrink-0">
                      <div className="w-6 h-6 bg-gray-200 dark:bg-[#2D2D3D] rounded animate-pulse"></div>
                      <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-gray-200 dark:bg-[#2D2D3D] rounded-full animate-pulse"></div>
@@ -1631,7 +1677,7 @@ export default function Dashboard() {
             onClick={handleLogout} 
             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50/60 dark:bg-red-950/20 hover:bg-red-100/80 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-2xl border border-red-200/50 dark:border-red-900/30 transition-all font-bold text-sm shadow-sm hover:scale-[1.02] active:scale-[0.98] duration-200 cursor-pointer"
           >
-            <LogOut className="w-4 h-4 shrink-0" /> 
+            <LogOut className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" /> 
             <span>تسجيل خروج / عودة</span>
           </button>
         </motion.div>
@@ -1654,20 +1700,121 @@ export default function Dashboard() {
   return (
     <div className="h-screen bg-gray-50 dark:bg-[#0D0D12] text-gray-900 dark:text-white flex flex-col md:flex-row font-sans selection:bg-primary/30 overflow-hidden">
       
+            {/* Mobile Drawer Overlay */}
+      <AnimatePresence>
+        {isMobileDrawerOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 z-[100] md:hidden"
+            onClick={() => setIsMobileDrawerOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+        {isMobileDrawerOpen && (
+          <motion.aside 
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="fixed top-0 right-0 bottom-0 w-[280px] bg-white dark:bg-[#1A1A24] z-[101] shadow-2xl flex flex-col md:hidden border-l border-gray-200 dark:border-[#2D2D3D]"
+          >
+            <div className="h-20 border-b border-gray-200 dark:border-[#2D2D3D] flex items-center justify-between px-4 shrink-0">
+              <div className="flex items-center gap-2.5">
+                  {settings.logoUrl ? (
+                    <img src={settings.logoUrl} alt="Logo" className="w-7 h-7 md:w-8 md:h-8 object-contain rounded-xl shadow-md" />
+                  ) : (
+                    <div className="w-7 h-7 md:w-8 md:h-8 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-base md:text-lg text-white shadow-md shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 border border-white/10 select-none">
+                        {settings.logoChar}
+                    </div>
+                  )}
+                  <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] bg-clip-text text-transparent select-none inline-block py-1 px-0.5 leading-normal">{settings.platformName}</span>
+              </div>
+              <button onClick={() => setIsMobileDrawerOpen(false)} className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-[#2D2D3D] rounded-xl">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+              {(userData?.role === 'admin' ? [
+                { id: 'home', label: 'الرئيسية', icon: Target },
+                { id: 'admin', label: 'لوحة الإدارة', icon: Shield },
+                { id: 'admin_recharge', label: 'شحن الرصيد', icon: Ticket },
+                { id: 'admin_courses', label: 'الكورسات', icon: BookOpen },
+                { id: 'analytics', label: 'التقارير والإحصائيات', icon: Flame },
+                { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+              ] : userData?.role === 'teacher' ? [
+                { id: 'home', label: 'الرئيسية', icon: Target },
+                { id: 'classes', label: 'فصولي وإدارة الطلاب', icon: Users },
+                { id: 'quizzes', label: 'إدارة الاختبارات والواجبات', icon: Award },
+                { id: 'analytics', label: 'تحليلات الأداء المتقدمة', icon: Activity },
+                { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+              ] : userData?.role === 'parent' ? [
+                { id: 'home', label: 'الرئيسية (متابعة الأبناء)', icon: Target },
+                { id: 'quizzes', label: 'نتائج الاختبارات والتقييمات', icon: Award },
+                { id: 'schedule', label: 'الجدول الدراسي للحصص', icon: Clock },
+                { id: 'wallet', label: 'المحفظة الإلكترونية', icon: Ticket },
+                { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+              ] : [
+                { id: 'home', label: 'الرئيسية', icon: Target },
+                { id: 'subjects', label: 'كورساتي', icon: BookOpen },
+                { id: 'teachers_list', label: 'المعلمون', icon: Users },
+                { id: 'quizzes', label: 'الاختبارات والواجبات', icon: Award },
+                { id: 'badges', label: 'الأوسمة والإنجازات', icon: Trophy },
+                { id: 'schedule', label: 'الجدول الدراسي للحصص', icon: Clock },
+                { id: 'wallet', label: 'المحفظة الإلكترونية وشحن الرصيد', icon: Ticket },
+                { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+              ]).map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                     setActiveTab(item.id);
+                     setIsMobileDrawerOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all ${
+                    activeTab === item.id 
+                      ? 'bg-[#00B4D8] dark:bg-[#D4AF37] text-white shadow-md shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 scale-100' 
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2D2D3D]/50 hover:text-gray-900 dark:hover:text-white hover:scale-[1.02]'
+                  }`}
+                >
+                  <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'opacity-100' : 'opacity-70'}`} />
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+            <div className="p-4 border-t border-gray-200 dark:border-[#2D2D3D] shrink-0">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl transition-all font-bold text-sm"
+              >
+                <LogOut className="w-5 h-5" />
+                تسجيل الخروج
+              </button>
+            </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
       {/* Sidebar */}
-      <aside className="w-full md:w-64 bg-white dark:bg-[#1A1A24] border-l border-gray-200 dark:border-[#2D2D3D] flex flex-col shrink-0 shadow-sm z-10 hidden md:flex h-full overflow-hidden">
-        <div className="h-20 border-b border-gray-200 dark:border-[#2D2D3D] flex items-center justify-center gap-2.5 shrink-0">
+      <aside className={`bg-white dark:bg-[#1A1A24] border-l border-gray-200 dark:border-[#2D2D3D] flex flex-col shrink-0 shadow-sm z-30 hidden md:flex h-full overflow-hidden transition-all duration-300 relative ${sidebarCollapsed ? 'w-20' : 'w-64'}`}>
+        <div className={`h-20 border-b border-gray-200 dark:border-[#2D2D3D] flex items-center shrink-0 transition-all duration-300 ${sidebarCollapsed ? 'justify-center' : 'justify-center gap-2.5'}`}>
             {settings.logoUrl ? (
-              <img src={settings.logoUrl} alt="Logo" className="w-8 h-8 object-contain rounded-xl shadow-md" />
+              <img src={settings.logoUrl} alt="Logo" className={`w-8 h-8 object-contain rounded-xl shadow-md transition-all ${sidebarCollapsed ? 'scale-110' : ''}`} />
             ) : (
-              <div className="w-8 h-8 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-lg text-white shadow-md shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 border border-white/10 select-none">
+              <div className={`w-8 h-8 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-lg text-white shadow-md shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 border border-white/10 select-none transition-all ${sidebarCollapsed ? 'scale-110' : ''}`}>
                   {settings.logoChar}
               </div>
             )}
-            <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] bg-clip-text text-transparent select-none inline-block py-1 px-0.5 leading-normal">{settings.platformName}</span>
+            {!sidebarCollapsed && (
+              <span className="text-lg sm:text-xl font-black tracking-tight bg-gradient-to-r from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] bg-clip-text text-transparent select-none inline-block py-1 px-0.5 leading-normal whitespace-nowrap">
+                {settings.platformName}
+              </span>
+            )}
         </div>
 
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto min-h-0">
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto min-h-0 custom-scrollbar">
           {(userData?.role === 'admin' ? [
             { id: 'home', label: 'الرئيسية', icon: Target },
             { id: 'admin', label: 'لوحة الإدارة', icon: Shield },
@@ -1680,7 +1827,6 @@ export default function Dashboard() {
             { id: 'classes', label: 'فصولي', icon: Users },
             { id: 'quizzes', label: 'الاختبارات', icon: Award },
             { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
-            { id: 'live', label: 'حصص لايف', icon: Video },
             { id: 'analytics', label: 'التقارير', icon: Flame },
             { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
           ] : userData?.role === 'parent' ? [
@@ -1697,7 +1843,6 @@ export default function Dashboard() {
             { id: 'teachers_list', label: 'المعلمون', icon: Users },
             { id: 'quizzes', label: 'الاختبارات', icon: Award },
             { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
-            { id: 'live', label: 'حصص لايف', icon: Video },
             { id: 'notes', label: 'الملاحظات السريعة', icon: Edit2 },
 
             { id: 'wallet', label: 'المحفظة', icon: Ticket },
@@ -1707,25 +1852,37 @@ export default function Dashboard() {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold text-sm ${
+              title={sidebarCollapsed ? item.label : ""}
+              className={`w-full flex items-center rounded-xl transition-all font-bold text-sm overflow-hidden ${
+                sidebarCollapsed ? 'justify-center px-0 py-3' : 'px-4 py-3 gap-3'
+              } ${
                 activeTab === item.id 
                   ? 'bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 text-[#00B4D8] dark:text-[#D4AF37]' 
                   : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-[#1A1A24] dark:bg-[#0D0D12] hover:text-gray-900 dark:hover:text-white'
               }`}
             >
-              <item.icon className="w-5 h-5" />
-              {item.label}
+              <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? 'scale-110' : ''}`} />
+              {!sidebarCollapsed && (
+                <motion.span
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="whitespace-nowrap"
+                >
+                  {item.label}
+                </motion.span>
+              )}
             </button>
           ))}
         </nav>
 
-        <div className="p-4 border-t border-gray-200 dark:border-[#2D2D3D] flex justify-center shrink-0 bg-white dark:bg-[#1A1A24]">
+        <div className={`p-4 border-t border-gray-200 dark:border-[#2D2D3D] flex justify-center shrink-0 bg-white dark:bg-[#1A1A24] transition-all duration-300 ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
           <button 
             onClick={handleLogout} 
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-50/60 dark:bg-red-950/20 hover:bg-red-100/80 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-2xl border border-red-200/50 dark:border-red-900/30 transition-all font-bold text-sm shadow-sm hover:scale-[1.02] active:scale-[0.98] duration-200"
+            title={sidebarCollapsed ? "تسجيل خروج" : ""}
+            className={`w-full flex items-center justify-center bg-red-50/60 dark:bg-red-950/20 hover:bg-red-100/80 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-2xl border border-red-200/50 dark:border-red-900/30 transition-all font-bold text-sm shadow-sm hover:scale-[1.02] active:scale-[0.98] duration-200 ${sidebarCollapsed ? 'px-0 py-3' : 'px-4 py-3 gap-2'}`}
           >
             <LogOut className="w-4 h-4 shrink-0" /> 
-            <span>تسجيل خروج</span>
+            {!sidebarCollapsed && <span className="whitespace-nowrap">تسجيل خروج</span>}
           </button>
         </div>
       </aside>
@@ -1734,18 +1891,35 @@ export default function Dashboard() {
       <main className="flex-1 flex flex-col h-full overflow-y-auto relative">
         <Toaster position="top-center" reverseOrder={false} />
         {/* Top Header */}
-        <header className="bg-white dark:bg-[#1A1A24] border-b border-gray-200 dark:border-[#2D2D3D] px-6 h-20 flex items-center justify-between sticky top-0 z-20 shadow-sm shrink-0">
-           <div className="flex items-center gap-3 md:hidden">
-              <div className="w-8 h-8 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-lg text-white shadow-md shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 border border-white/10 select-none">
-                  T
+        <header className="bg-white dark:bg-[#1A1A24] border-b border-gray-200 dark:border-[#2D2D3D] px-3 md:px-6 h-16 md:h-20 flex items-center justify-between sticky top-0 z-20 shadow-sm shrink-0">
+           <div className="flex items-center gap-2 md:gap-4 shrink-0">
+              <button 
+                onClick={() => setIsMobileDrawerOpen(true)}
+                className="md:hidden p-1.5 md:p-2 -ml-1 md:-ml-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D2D3D] rounded-xl"
+              >
+                <Menu className="w-5 h-5 md:w-6 md:h-6" />
+              </button>
+
+              <button 
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                className="hidden md:flex p-2 text-gray-400 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] hover:bg-gray-50 dark:hover:bg-[#0D0D12] rounded-xl transition-all"
+                title={sidebarCollapsed ? "توسيع القائمة" : "طي القائمة"}
+              >
+                {sidebarCollapsed ? <ChevronLeft className="w-6 h-6" /> : <ChevronRight className="w-6 h-6" />}
+              </button>
+
+              <div className="md:hidden flex items-center gap-2">
+                {settings.logoUrl ? (
+                  <img src={settings.logoUrl} alt="Logo" className="w-8 h-8 object-contain rounded-xl shadow-md" />
+                ) : (
+                  <div className="w-8 h-8 bg-gradient-to-tr from-[#0077B6] to-[#00B4D8] dark:from-[#B8860B] dark:to-[#D4AF37] rounded-xl flex items-center justify-center font-black text-lg text-white shadow-md shadow-[#00B4D8]/30 dark:shadow-[#D4AF37]/30 border border-white/10 select-none">
+                      {settings.logoChar}
+                  </div>
+                )}
               </div>
            </div>
 
-           <div className="hidden md:flex flex-col">
-              <h2 className="font-black text-lg text-gray-900 dark:text-white">أهلاً بك، {userData?.name?.split(' ')[0] || 'المستخدم'} 👋</h2>
-              <p className="text-gray-500 dark:text-gray-400 text-xs font-bold mt-1">
-                  {userData?.role === "teacher" ? "لوحة تحكم المعلم" : userData?.role === "parent" ? "لوحة تحكم ولي الأمر" : userData?.role === "admin" ? "لوحة تحكم النظام" : "جاهز تذاكر وتتميز؟ 🚀"}
-              </p>
+           <div className="hidden md:flex flex-col flex-1">
            </div>
            <div className="flex items-center gap-4">
               {userData?.role === 'student' && (
@@ -1760,7 +1934,7 @@ export default function Dashboard() {
                   role="button"
                   tabIndex={0}
                   aria-label={`محفظتي التعليمية، الرصيد الحالي هو ${userData?.balance ?? 0} جنيه مصري. اضغط أو اضغط مسافة للذهاب للمحفظة`}
-                  className="flex items-center gap-2 bg-gradient-to-r from-[#00B4D8]/10 to-[#0077B6]/10 dark:from-[#D4AF37]/10 dark:to-[#B8860B]/10 hover:from-[#00B4D8]/20 hover:to-[#0077B6]/20 dark:hover:from-[#D4AF37]/20 dark:hover:to-[#B8860B]/20 border border-[#00B4D8]/20 dark:border-[#D4AF37]/20 px-3.5 py-1.5 rounded-2xl cursor-pointer transition-all duration-200 active:scale-95 shadow-sm group ml-2 focus:outline-none focus:ring-2 focus:ring-[#00B4D8] dark:focus:ring-[#D4AF37]"
+                  className="flex items-center gap-1.5 md:gap-2 bg-gradient-to-r from-[#00B4D8]/10 to-[#0077B6]/10 dark:from-[#D4AF37]/10 dark:to-[#B8860B]/10 hover:from-[#00B4D8]/20 hover:to-[#0077B6]/20 dark:hover:from-[#D4AF37]/20 dark:hover:to-[#B8860B]/20 border border-[#00B4D8]/20 dark:border-[#D4AF37]/20 px-2 md:px-3.5 py-1 md:py-1.5 rounded-xl md:rounded-2xl cursor-pointer transition-all duration-200 active:scale-95 shadow-sm group ml-2 focus:outline-none focus:ring-2 focus:ring-[#00B4D8] dark:focus:ring-[#D4AF37]"
                   title="محفظتي التعليمية - اضغط للذهاب للمحفظة"
                 >
                   <div className="w-7 h-7 rounded-xl bg-[#00B4D8]/20 dark:bg-[#D4AF37]/20 flex items-center justify-center text-[#00B4D8] dark:text-[#D4AF37] group-hover:scale-110 transition-transform">
@@ -1777,7 +1951,7 @@ export default function Dashboard() {
               <ThemeToggle />
               <button 
                 onClick={handleLogout}
-                className="md:hidden w-10 h-10 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center border border-red-150 dark:border-red-900/30 transition-all font-bold text-sm shadow-sm hover:scale-[1.02] active:scale-[0.98] duration-200 cursor-pointer"
+                className="md:hidden w-8 h-8 md:w-10 md:h-10 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center border border-red-150 dark:border-red-900/30 transition-all font-bold text-sm shadow-sm hover:scale-[1.02] active:scale-[0.98] duration-200 cursor-pointer"
                 title="تسجيل خروج"
               >
                 <LogOut className="w-4 h-4 shrink-0" />
@@ -1785,9 +1959,9 @@ export default function Dashboard() {
               <div className="relative" ref={notificationsRef}>
                 <button 
                   onClick={() => setShowNotifications(!showNotifications)}
-                  className="w-10 h-10 bg-gray-50 dark:bg-[#0D0D12] rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#222230] transition-colors relative"
+                  className="w-8 h-8 md:w-10 md:h-10 bg-gray-50 dark:bg-[#0D0D12] rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#222230] transition-colors relative"
                 >
-                   <Bell className="w-5 h-5" />
+                   <Bell className="w-4 h-4 md:w-5 md:h-5" />
                    {notifications.filter(n => !n.read).length > 0 && (
                      <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-[#1A1A24]"></span>
                    )}
@@ -1831,17 +2005,6 @@ export default function Dashboard() {
                   )}
                 </AnimatePresence>
               </div>
-              <button 
-                onClick={() => setActiveTab('profile')}
-                title="الملف الشخصي"
-                className={`w-10 h-10 rounded-full border-2 shadow-sm overflow-hidden flex items-center justify-center font-bold text-lg transition-all ${
-                  activeTab === 'profile'
-                    ? 'border-[#00B4D8] dark:border-[#D4AF37] ring-4 ring-[#00B4D8]/20 dark:ring-[#D4AF37]/20 text-[#00B4D8] dark:text-[#D4AF37]'
-                    : 'border-white dark:border-[#2D2D3D] bg-gray-200 dark:bg-[#2D2D3D] text-gray-500 hover:scale-105'
-                }`}
-              >
-                 {userData?.name?.charAt(0) || 'U'}
-              </button>
            </div>
         </header>
 
@@ -1866,6 +2029,81 @@ export default function Dashboard() {
                       <p className="text-white/80 font-medium">هذه لوحة التحكم الرئيسية الخاصة بك لإدارة منصة Teachland.</p>
                     </div>
                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white dark:bg-[#15151F] p-6 rounded-3xl border border-gray-100 dark:border-[#2D2D3D] shadow-sm flex flex-col items-center text-center">
+                    <div className="w-14 h-14 bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-full flex items-center justify-center mb-4">
+                      <Users className="w-7 h-7" />
+                    </div>
+                    <h3 className="text-gray-500 dark:text-gray-400 text-sm font-bold mb-1">إجمالي الطلاب</h3>
+                    <div className="text-3xl font-black text-gray-900 dark:text-white">
+                      {loadingAdminStats ? '...' : adminStats.students.toLocaleString('ar-EG')}
+                    </div>
+                  </div>
+                  <div className="bg-white dark:bg-[#15151F] p-6 rounded-3xl border border-gray-100 dark:border-[#2D2D3D] shadow-sm flex flex-col items-center text-center">
+                    <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 rounded-full flex items-center justify-center mb-4">
+                      <Users className="w-7 h-7" />
+                    </div>
+                    <h3 className="text-gray-500 dark:text-gray-400 text-sm font-bold mb-1">إجمالي المعلمين</h3>
+                    <div className="text-3xl font-black text-gray-900 dark:text-white">
+                      {loadingAdminStats ? '...' : adminStats.teachers.toLocaleString('ar-EG')}
+                    </div>
+                  </div>
+                  <div className="bg-white dark:bg-[#15151F] p-6 rounded-3xl border border-gray-100 dark:border-[#2D2D3D] shadow-sm flex flex-col items-center text-center">
+                    <div className="w-14 h-14 bg-amber-50 dark:bg-amber-900/20 text-amber-500 rounded-full flex items-center justify-center mb-4">
+                      <BookOpen className="w-7 h-7" />
+                    </div>
+                    <h3 className="text-gray-500 dark:text-gray-400 text-sm font-bold mb-1">الكورسات والمواد</h3>
+                    <div className="text-3xl font-black text-gray-900 dark:text-white">
+                      {loadingAdminStats ? '...' : adminStats.courses.toLocaleString('ar-EG')}
+                    </div>
+                  </div>
+                  <div className="bg-white dark:bg-[#15151F] p-6 rounded-3xl border border-gray-100 dark:border-[#2D2D3D] shadow-sm flex flex-col items-center text-center">
+                    <div className="w-14 h-14 bg-purple-50 dark:bg-purple-900/20 text-purple-500 rounded-full flex items-center justify-center mb-4">
+                      <CreditCard className="w-7 h-7" />
+                    </div>
+                    <h3 className="text-gray-500 dark:text-gray-400 text-sm font-bold mb-1">طلبات الشحن المعلقة</h3>
+                    <div className="text-3xl font-black text-gray-900 dark:text-white">
+                      {loadingAdminStats ? '...' : adminStats.pendingPayments.toLocaleString('ar-EG')}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
+                  <button onClick={() => setActiveTab('admin_panel')} className="p-6 bg-white dark:bg-[#15151F] border border-gray-100 dark:border-[#2D2D3D] rounded-3xl hover:border-[#00B4D8] dark:hover:border-[#D4AF37] transition-all flex items-center justify-between group">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gray-50 dark:bg-[#20202D] rounded-xl flex items-center justify-center group-hover:bg-[#00B4D8]/10 dark:group-hover:bg-[#D4AF37]/10 transition-colors">
+                        <Shield className="w-6 h-6 text-gray-400 group-hover:text-[#00B4D8] dark:group-hover:text-[#D4AF37]" />
+                      </div>
+                      <div className="text-right">
+                        <h4 className="font-black text-gray-900 dark:text-white mb-1">إدارة المستخدمين</h4>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium leading-relaxed">الطلاب، المعلمون وأولياء الأمور</p>
+                      </div>
+                    </div>
+                  </button>
+                  <button onClick={() => setActiveTab('admin_recharge')} className="p-6 bg-white dark:bg-[#15151F] border border-gray-100 dark:border-[#2D2D3D] rounded-3xl hover:border-[#00B4D8] dark:hover:border-[#D4AF37] transition-all flex items-center justify-between group">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gray-50 dark:bg-[#20202D] rounded-xl flex items-center justify-center group-hover:bg-[#00B4D8]/10 dark:group-hover:bg-[#D4AF37]/10 transition-colors">
+                        <Ticket className="w-6 h-6 text-gray-400 group-hover:text-[#00B4D8] dark:group-hover:text-[#D4AF37]" />
+                      </div>
+                      <div className="text-right">
+                        <h4 className="font-black text-gray-900 dark:text-white mb-1">مركز الشحن</h4>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium leading-relaxed">إدارة الدفعات وتوليد الأكواد</p>
+                      </div>
+                    </div>
+                  </button>
+                  <button onClick={() => setActiveTab('admin_courses')} className="p-6 bg-white dark:bg-[#15151F] border border-gray-100 dark:border-[#2D2D3D] rounded-3xl hover:border-[#00B4D8] dark:hover:border-[#D4AF37] transition-all flex items-center justify-between group">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-gray-50 dark:bg-[#20202D] rounded-xl flex items-center justify-center group-hover:bg-[#00B4D8]/10 dark:group-hover:bg-[#D4AF37]/10 transition-colors">
+                        <BookOpen className="w-6 h-6 text-gray-400 group-hover:text-[#00B4D8] dark:group-hover:text-[#D4AF37]" />
+                      </div>
+                      <div className="text-right">
+                        <h4 className="font-black text-gray-900 dark:text-white mb-1">إدارة الكورسات</h4>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium leading-relaxed">الموافقة والمراجعة</p>
+                      </div>
+                    </div>
+                  </button>
                 </div>
               </div>
             )}
@@ -2223,31 +2461,31 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {activeTab === 'live' && (
-              <motion.div
-                key="live"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-              >
-                <LiveClassroom userData={userData} />
-              </motion.div>
-            )}
-
             {activeTab === 'messages' && (
-              <motion.div
-                key="soon"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="h-[60vh] flex flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400"
-              >
-                <div className="w-20 h-20 bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-2xl flex items-center justify-center mb-6">
-                  <Lock className="w-10 h-10 text-gray-600 dark:text-gray-300" />
-                </div>
-                <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">قريباً</h2>
-                <p className="font-medium text-sm">يتم تجهيز هذا القسم ليواكب أحدث التعديلات</p>
-              </motion.div>
+              userData?.role === 'parent' ? (
+                <motion.div
+                  key="parent_teachers"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                >
+                  <ParentTeachersList userData={userData} linkedStudent={linkedStudent} />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="soon"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="h-[60vh] flex flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400"
+                >
+                  <div className="w-20 h-20 bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-2xl flex items-center justify-center mb-6">
+                    <Lock className="w-10 h-10 text-gray-600 dark:text-gray-300" />
+                  </div>
+                  <h2 className="text-2xl font-black text-gray-900 dark:text-white mb-2">قريباً</h2>
+                  <p className="font-medium text-sm">يتم تجهيز هذا القسم ليواكب أحدث التعديلات</p>
+                </motion.div>
+              )
             )}
 
                         {(activeTab === 'analytics' || activeTab === 'reports') && (
@@ -3254,43 +3492,7 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* Mobile Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#1A1A24] border-t border-gray-200 dark:border-[#2D2D3D] flex justify-around p-3 z-40 pb-safe">
-        {(userData?.role === 'admin' ? [
-            { id: 'home', icon: Target, label: 'الرئيسية' },
-            { id: 'admin', icon: Shield, label: 'الإدارة' },
-            { id: 'admin_recharge', icon: Ticket, label: 'الشحن' },
-            { id: 'admin_courses', icon: BookOpen, label: 'الكورسات' },
-            { id: 'profile', icon: UserIcon, label: 'حسابي' },
-        ] : userData?.role === 'teacher' ? [
-            { id: 'home', icon: Target, label: 'الرئيسية' },
-            { id: 'classes', icon: Users, label: 'فصولي' },
-            { id: 'quizzes', icon: Award, label: 'الاختبارات' },
-            { id: 'live', icon: Video, label: 'لايف' },
-            { id: 'profile', icon: UserIcon, label: 'حسابي' },
-        ] : userData?.role === 'parent' ? [
-            { id: 'home', icon: Target, label: 'الرئيسية' },
-            { id: 'quizzes', icon: Award, label: 'الاختبارات' },
-            { id: 'schedule', icon: Clock, label: 'الجدول' },
-            { id: 'wallet', icon: Ticket, label: 'المحفظة' },
-            { id: 'profile', icon: UserIcon, label: 'حسابي' },
-        ] : [
-            { id: 'home', icon: Target, label: 'الرئيسية' },
-            { id: 'subjects', icon: BookOpen, label: 'موادي' },
-            { id: 'teachers_list', icon: Users, label: 'المعلمون' },
-            { id: 'quizzes', icon: Award, label: 'الاختبارات' },
-            { id: 'profile', icon: UserIcon, label: 'حسابي' },
-        ]).map(item => (
-            <button 
-               key={item.id}
-               onClick={() => setActiveTab(item.id)}
-               className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-colors ${activeTab === item.id ? 'text-[#00B4D8] dark:text-[#D4AF37]' : 'text-gray-500 dark:text-gray-400'}`}
-            >
-               <item.icon className="w-6 h-6" />
-               <span className="text-[10px] font-bold">{item.label}</span>
-            </button>
-        ))}
-      </nav>
+      
     </div>
   );
 }

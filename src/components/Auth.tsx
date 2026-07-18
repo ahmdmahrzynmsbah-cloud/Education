@@ -23,6 +23,8 @@ export default function Auth() {
   const [role, setRole] = useState<'student' | 'teacher' | 'parent' | 'admin'>('student');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [selectedGrade, setSelectedGrade] = useState('');
+  const [educationSystem, setEducationSystem] = useState('general');
   const navigate = useNavigate();
 
   const [roleSelected, setRoleSelected] = useState(false);
@@ -165,7 +167,9 @@ export default function Auth() {
             grade: formData.get('grade') as string,
             school: formData.get('school') as string,
             parentPhone: formData.get('parentPhone') as string,
-            isApproved: true
+            educationSystem: formData.get('educationSystem') as string,
+            branch: formData.get('branch') as string || null,
+            isApproved: false
           });
         } else if (role === 'teacher') {
           // get checked grades
@@ -187,7 +191,7 @@ export default function Auth() {
             nationalId: formData.get('nationalId') as string,
             dateOfBirth: formData.get('dateOfBirth') as string,
             teachingGrades: finalGrades,
-            isApproved: true
+            isApproved: false
           });
 
           // Send notifications to students who are in the teacher's teachingGrades
@@ -217,7 +221,7 @@ export default function Auth() {
           await setDoc(doc(db, 'users', user.uid), {
             ...baseData,
             studentPhone: formData.get('studentPhone') as string,
-            isApproved: true
+            isApproved: false
           });
         } else if (role === 'admin') {
           await setDoc(doc(db, 'users', user.uid), {
@@ -500,25 +504,82 @@ export default function Auth() {
                     </div>
                     
                     {role === 'student' ? (
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-700 dark:text-gray-200 block">الصف الدراسي</label>
-                        <div className="relative">
-                          <BookOpen className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
-                          <select name="grade" required className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pl-4 pr-10 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:focus:bg-[#0D0D12] transition-colors appearance-none text-sm font-bold">
-                            <option value="">اختر الصف</option>
-                            <optgroup label="المرحلة الإعدادية">
-                              <option value="الأول الإعدادي">الأول الإعدادي</option>
-                              <option value="الثاني الإعدادي">الثاني الإعدادي</option>
-                              <option value="الثالث الإعدادي">الثالث الإعدادي</option>
-                            </optgroup>
-                            <optgroup label="المرحلة الثانوية">
-                              <option value="الأول الثانوي">الأول الثانوي</option>
-                              <option value="الثاني الثانوي">الثاني الثانوي</option>
-                              <option value="الثالث الثانوي">الثالث الثانوي</option>
-                            </optgroup>
-                          </select>
+                      <>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-gray-700 dark:text-gray-200 block">نوع التعليم</label>
+                          <div className="relative">
+                            <GraduationCap className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
+                            <select 
+                              name="educationSystem" 
+                              required 
+                              value={educationSystem}
+                              onChange={(e) => setEducationSystem(e.target.value)}
+                              className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pl-4 pr-10 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:focus:bg-[#0D0D12] transition-colors appearance-none text-sm font-bold"
+                            >
+                              <option value="general">ثانوي عام</option>
+                              <option value="azhar">ثانوي أزهري</option>
+                            </select>
+                          </div>
                         </div>
-                      </div>
+
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-gray-700 dark:text-gray-200 block">الصف الدراسي</label>
+                          <div className="relative">
+                            <BookOpen className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
+                            <select 
+                              name="grade" 
+                              required 
+                              value={selectedGrade}
+                              onChange={(e) => setSelectedGrade(e.target.value)}
+                              className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pl-4 pr-10 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:focus:bg-[#0D0D12] transition-colors appearance-none text-sm font-bold"
+                            >
+                              <option value="">اختر الصف</option>
+                              <optgroup label="المرحلة الإعدادية">
+                                <option value="الأول الإعدادي">الأول الإعدادي</option>
+                                <option value="الثاني الإعدادي">الثاني الإعدادي</option>
+                                <option value="الثالث الإعدادي">الثالث الإعدادي</option>
+                              </optgroup>
+                              <optgroup label="المرحلة الثانوية">
+                                <option value="الأول الثانوي">الأول الثانوي</option>
+                                <option value="الثاني الثانوي">الثاني الثانوي</option>
+                                <option value="الثالث الثانوي">الثالث الثانوي</option>
+                              </optgroup>
+                            </select>
+                          </div>
+                        </div>
+
+                        {(selectedGrade === 'الثاني الثانوي' || selectedGrade === 'الثالث الثانوي') && (
+                          <div className="space-y-2 sm:col-span-2">
+                            <label className="text-xs font-bold text-gray-700 dark:text-gray-200 block">الشعبة</label>
+                            <div className="relative">
+                              <Users className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400" />
+                              <select name="branch" required className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl pl-4 pr-10 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:focus:bg-[#0D0D12] transition-colors appearance-none text-sm font-bold">
+                                {educationSystem === 'azhar' ? (
+                                  <>
+                                    <option value="scientific">علمي</option>
+                                    <option value="literary">أدبي</option>
+                                  </>
+                                ) : (
+                                  <>
+                                    {selectedGrade === 'الثاني الثانوي' ? (
+                                      <>
+                                        <option value="scientific">علمي</option>
+                                        <option value="literary">أدبي</option>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <option value="science">علمي علوم</option>
+                                        <option value="math">علمي رياضة</option>
+                                        <option value="arts">أدبي</option>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                      </>
                     ) : role === 'teacher' ? (
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-gray-700 dark:text-gray-200 block">المادة</label>

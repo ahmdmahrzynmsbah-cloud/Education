@@ -18,7 +18,8 @@
         "subject": { "type": "string", "maxLength": 50 },
         "nationalId": { "type": "string", "pattern": "^[23][0-9]{13}$" },
         "dateOfBirth": { "type": "string", "maxLength": 20 },
-        "teachingGrades": { "type": "array", "maxLength": 3 }
+        "teachingGrades": { "type": "array", "maxLength": 3 },
+        "balance": { "type": "number" }
       },
       "required": ["email", "name", "phone", "governorate", "role"]
     },
@@ -105,6 +106,20 @@
         "createdAt": { "type": "string" }
       },
       "required": ["code", "amount", "used", "createdBy", "createdAt"]
+    },
+    "WalletTransaction": {
+      "title": "Wallet Transaction",
+      "description": "Records of wallet balance changes for purchases or recharges.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["course_purchase", "recharge"] },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "userName", "amount", "type", "createdAt"]
     }
   },
   "firestore": {
@@ -131,6 +146,10 @@
     "recharge_codes/{codeId}": {
       "schema": { "$ref": "RechargeCode" },
       "description": "Prepaid recharge codes and cards."
+    },
+    "wallet_transactions/{transactionId}": {
+      "schema": { "$ref": "WalletTransaction" },
+      "description": "Wallet transaction history."
     }
   }
 }

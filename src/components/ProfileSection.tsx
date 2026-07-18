@@ -202,6 +202,8 @@ export default function ProfileSection({ userData, onUpdateUserData }: ProfileSe
   const [school, setSchool] = useState(userData?.school || '');
   const [grade, setGrade] = useState(userData?.grade || '');
   const [parentPhone, setParentPhone] = useState(userData?.parentPhone || '');
+  const [educationSystem, setEducationSystem] = useState(userData?.educationSystem || 'general');
+  const [branch, setBranch] = useState(userData?.branch || '');
 
   // Teacher Specific State
   const [subject, setSubject] = useState(userData?.subject || '');
@@ -250,7 +252,9 @@ export default function ProfileSection({ userData, onUpdateUserData }: ProfileSe
           ...updatedFields,
           school,
           grade,
-          parentPhone
+          parentPhone,
+          educationSystem,
+          branch
         };
       } else if (userData.role === 'teacher') {
         updatedFields = {
@@ -1181,6 +1185,21 @@ export default function ProfileSection({ userData, onUpdateUserData }: ProfileSe
                     <>
                       <div className="space-y-2">
                         <label className="text-xs font-black text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                          <GraduationCap className="w-3.5 h-3.5 text-[#00B4D8] dark:text-[#D4AF37]" /> نوع التعليم
+                        </label>
+                        <select
+                          required
+                          value={educationSystem}
+                          onChange={(e) => setEducationSystem(e.target.value as any)}
+                          className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none transition-colors"
+                        >
+                          <option value="general">ثانوي عام</option>
+                          <option value="azhar">ثانوي أزهري</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
                           <GraduationCap className="w-3.5 h-3.5 text-[#00B4D8] dark:text-[#D4AF37]" /> السنة الدراسية
                         </label>
                         <select
@@ -1202,6 +1221,43 @@ export default function ProfileSection({ userData, onUpdateUserData }: ProfileSe
                           </optgroup>
                         </select>
                       </div>
+
+                      {(grade === 'الثاني الثانوي' || grade === 'الثالث الثانوي') && (
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-[#00B4D8] dark:text-[#D4AF37]" /> الشعبة
+                          </label>
+                          <select
+                            required
+                            value={branch}
+                            onChange={(e) => setBranch(e.target.value as any)}
+                            className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none transition-colors"
+                          >
+                            <option value="">اختر الشعبة</option>
+                            {educationSystem === 'azhar' ? (
+                              <>
+                                <option value="scientific">علمي</option>
+                                <option value="literary">أدبي</option>
+                              </>
+                            ) : (
+                              <>
+                                {grade === 'الثاني الثانوي' ? (
+                                  <>
+                                    <option value="scientific">علمي</option>
+                                    <option value="literary">أدبي</option>
+                                  </>
+                                ) : (
+                                  <>
+                                    <option value="science">علمي علوم</option>
+                                    <option value="math">علمي رياضة</option>
+                                    <option value="arts">أدبي</option>
+                                  </>
+                                )}
+                              </>
+                            )}
+                          </select>
+                        </div>
+                      )}
 
                       <div className="space-y-2">
                         <label className="text-xs font-black text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
@@ -1242,11 +1298,13 @@ export default function ProfileSection({ userData, onUpdateUserData }: ProfileSe
                         <input
                           type="text"
                           required
+                          disabled
                           value={subject}
                           onChange={(e) => setSubject(e.target.value)}
-                          className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] focus:border-[#00B4D8] dark:focus:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] rounded-xl px-4 py-3 text-sm text-gray-900 dark:text-white outline-none transition-colors"
-                          placeholder="مثال: كيمياء، فيزياء، أحياء"
+                          className="w-full bg-gray-100 dark:bg-[#1A1A24] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 text-sm text-gray-500 dark:text-gray-400 outline-none cursor-not-allowed opacity-70"
+                          title="لا يمكن تغيير المادة بعد التسجيل. تواصل مع الإدارة للتعديل."
                         />
+                        <p className="text-[10px] text-gray-500 mt-1 font-bold">لا يمكن تغيير المادة بعد التسجيل. تواصل مع الإدارة للتعديل.</p>
                       </div>
 
                       <div className="space-y-2">

@@ -1,7 +1,7 @@
 export interface PlatformSettings {
   platformName: string;
   logoChar: string;
-  logoUrl?: string; // NEW!
+  logoUrl?: string;
   heroTitle: string;
   heroSubtitle: string;
   showGradesSection: boolean;
@@ -15,6 +15,16 @@ export interface PlatformSettings {
   faqTitle: string;
   faqSubtitle: string;
   vodafoneCashNumber: string;
+  subjects?: { id: string; title: string; iconName: string; color: string }[];
+  contactPhone?: string;
+  contactEmail?: string;
+  socialLinks?: {
+    facebook?: string;
+    twitter?: string;
+    youtube?: string;
+    instagram?: string;
+    whatsapp?: string;
+  };
 }
 
 export interface User {
@@ -34,6 +44,8 @@ export interface User {
   studentPhone?: string;
   balance?: number;
   createdAt?: string;
+  branch?: 'science' | 'math' | 'arts' | 'scientific' | 'literary';
+  educationSystem?: 'general' | 'azhar';
 }
 
 export interface Course {
@@ -94,7 +106,7 @@ export interface Notification {
   read: boolean;
   createdAt: string;
   views?: number;
-  type: 'enrollment' | 'system' | 'live_stream';
+  type: 'enrollment' | 'system';
 }
 
 export interface Review {
@@ -130,11 +142,15 @@ export interface LessonNote {
   updatedAt: string;
 }
 
+export type QuestionType = 'multiple_choice' | 'true_false' | 'essay';
+
 export interface Question {
   id: string;
   text: string;
-  options: string[];
-  correctOptionIndex: number;
+  type?: QuestionType; // Optional for backward compatibility, defaults to 'multiple_choice'
+  options: string[]; // Can be empty for essay
+  correctOptionIndex: number; // For multiple_choice and true_false
+  correctAnswer?: string; // For essay (teacher reference)
   explanation?: string;
   points: number;
 }
@@ -194,68 +210,4 @@ export interface FocusSession {
   createdAt: string;
 }
 
-export interface LiveMaterial {
-  id: string;
-  title: string;
-  url: string;
-  type: 'pdf' | 'image' | 'other';
-  uploadedAt: string;
-}
-
-export interface LiveStream {
-  id: string;
-  title: string;
-  description: string;
-  courseId: string;
-  courseTitle: string;
-  teacherId: string;
-  teacherName: string;
-  status: 'scheduled' | 'live' | 'ended';
-  scheduledAt?: string;
-  startedAt?: string;
-  endedAt?: string;
-  viewerCount: number;
-  whiteboardData?: string; // Base64 or serialized stroke data for real-time sync
-  pinnedMessage?: LiveChatMessage | null;
-  materials?: LiveMaterial[];
-  isScreenSharing?: boolean;
-  sharedScreenType?: 'presentation' | 'code' | 'whiteboard';
-  isWhiteboardActive?: boolean;
-  activeSlideIndex?: number;
-  voiceBroadcastText?: string;
-  voiceBroadcastTime?: string;
-  recordedUrl?: string;
-  recordingSummary?: string;
-}
-
-export interface LiveChatMessage {
-  id: string;
-  streamId: string;
-  userId: string;
-  userName: string;
-  userRole: string;
-  message: string;
-  createdAt: string;
-}
-
-export interface LivePoll {
-  id: string;
-  streamId: string;
-  question: string;
-  options: string[];
-  votes: Record<string, number>; // e.g. "0": 10, "1": 15
-  votedUserIds?: string[];
-  isActive: boolean;
-  createdAt: string;
-}
-
-export interface LiveHandRaise {
-  id: string;
-  streamId: string;
-  userId: string;
-  userName: string;
-  message?: string;
-  createdAt: string;
-  resolved: boolean;
-}
 
