@@ -219,7 +219,24 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing url parameter' });
       }
 
-      // Check if it's already a full TikTok video URL
+      // 1. Try to fetch from TikTok oEmbed API (extremely reliable and official)
+      try {
+        const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(tiktokUrl)}`;
+        const oembedResponse = await fetch(oembedUrl);
+        if (oembedResponse.ok) {
+          const data = (await oembedResponse.json()) as any;
+          const html = data.html || '';
+          const htmlMatch = html.match(/data-video-id="(\d+)"/) || html.match(/\/video\/(\d+)/);
+          const videoId = data.embed_product_id || (htmlMatch ? htmlMatch[1] : null);
+          if (videoId) {
+            return res.json({ videoId, url: data.author_url ? `${data.author_url}/video/${videoId}` : tiktokUrl });
+          }
+        }
+      } catch (oembedErr) {
+        console.warn("TikTok oEmbed failed, trying direct follow:", oembedErr);
+      }
+
+      // 2. Direct extract if it's already a full TikTok video URL
       if (tiktokUrl.includes('/video/')) {
         const match = tiktokUrl.match(/\/video\/(\d+)/);
         if (match && match[1]) {
@@ -227,7 +244,7 @@ async function startServer() {
         }
       }
 
-      // If it's a short/redirect URL (like vm.tiktok.com or tiktok.com/t/)
+      // 3. Fallback: If it's a short/redirect URL (like vm.tiktok.com or tiktok.com/t/)
       // We will follow the redirect by sending a GET request
       const response = await fetch(tiktokUrl, {
         method: 'GET',
