@@ -226,7 +226,7 @@ async function startServer() {
         if (oembedResponse.ok) {
           const data = (await oembedResponse.json()) as any;
           const html = data.html || '';
-          const htmlMatch = html.match(/data-video-id="(\d+)"/) || html.match(/\/video\/(\d+)/);
+          const htmlMatch = html.match(/data-video-id="(\d+)"/) || html.match(/\/(?:video|photo|v)\/(\d+)/);
           const videoId = data.embed_product_id || (htmlMatch ? htmlMatch[1] : null);
           if (videoId) {
             return res.json({ videoId, url: data.author_url ? `${data.author_url}/video/${videoId}` : tiktokUrl });
@@ -236,9 +236,9 @@ async function startServer() {
         console.warn("TikTok oEmbed failed, trying direct follow:", oembedErr);
       }
 
-      // 2. Direct extract if it's already a full TikTok video URL
-      if (tiktokUrl.includes('/video/')) {
-        const match = tiktokUrl.match(/\/video\/(\d+)/);
+      // 2. Direct extract if it's already a full TikTok video or photo URL
+      if (tiktokUrl.includes('/video/') || tiktokUrl.includes('/photo/') || tiktokUrl.includes('/v/')) {
+        const match = tiktokUrl.match(/\/(?:video|photo|v)\/(\d+)/);
         if (match && match[1]) {
           return res.json({ videoId: match[1], url: tiktokUrl });
         }
@@ -250,25 +250,19 @@ async function startServer() {
         method: 'GET',
         redirect: 'follow',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
       });
 
       const finalUrl = response.url;
-      const match = finalUrl.match(/\/video\/(\d+)/);
+      const match = finalUrl.match(/\/(?:video|photo|v)\/(\d+)/);
       if (match && match[1]) {
         return res.json({ videoId: match[1], url: finalUrl });
       }
 
-      // If it redirected but we still can't find /video/{id}, check for /v/{id}
-      const matchV = finalUrl.match(/\/v\/(\d+)/);
-      if (matchV && matchV[1]) {
-        return res.json({ videoId: matchV[1], url: finalUrl });
-      }
-
-      // Fallback: search redirect body for a video ID or cite URL if possible
+      // If it redirected but we still can't find content ID in path, search redirect body
       const bodyText = await response.text();
-      const bodyMatch = bodyText.match(/"id":"(\d+)"/) || bodyText.match(/\/video\/(\d+)/) || bodyText.match(/"videoId":"(\d+)"/);
+      const bodyMatch = bodyText.match(/"id":"(\d+)"/) || bodyText.match(/\/(?:video|photo|v)\/(\d+)/) || bodyText.match(/"videoId":"(\d+)"/);
       if (bodyMatch && bodyMatch[1]) {
         return res.json({ videoId: bodyMatch[1], url: `https://www.tiktok.com/video/${bodyMatch[1]}` });
       }

@@ -508,7 +508,7 @@ export default function CourseDetails() {
         return `https://www.youtube.com/embed/${videoId}`;
       }
       if (url.includes('tiktok.com')) {
-        const match = url.match(/\/video\/(\d+)/);
+        const match = url.match(/\/(?:video|photo|v)\/(\d+)/);
         if (match && match[1]) {
           return `https://www.tiktok.com/embed/v2/${match[1]}`;
         }

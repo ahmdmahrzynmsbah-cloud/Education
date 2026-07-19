@@ -13,8 +13,8 @@ export default function TikTokPlayer({ videoUrl }: { videoUrl: string }) {
       setError(null);
       try {
         // Try to parse locally first to avoid unnecessary fetch if it's already a full url
-        if (videoUrl.includes('/video/')) {
-          const match = videoUrl.match(/\/video\/(\d+)/);
+        if (videoUrl.includes('/video/') || videoUrl.includes('/photo/') || videoUrl.includes('/v/')) {
+          const match = videoUrl.match(/\/(?:video|photo|v)\/(\d+)/);
           if (match && match[1]) {
             if (active) {
               setEmbedUrl(`https://www.tiktok.com/embed/v2/${match[1]}`);
@@ -67,12 +67,12 @@ export default function TikTokPlayer({ videoUrl }: { videoUrl: string }) {
   }
 
   if (error || !embedUrl) {
-    const match = videoUrl.match(/\/video\/(\d+)/);
+    const match = videoUrl.match(/\/(?:video|photo|v)\/(\d+)/);
     const fallbackUrl = match && match[1]
       ? `https://www.tiktok.com/embed/v2/${match[1]}` 
       : videoUrl;
 
-    const isShortUrl = !videoUrl.includes('/video/') && !videoUrl.includes('/embed/');
+    const isShortUrl = !videoUrl.includes('/video/') && !videoUrl.includes('/photo/') && !videoUrl.includes('/v/') && !videoUrl.includes('/embed/');
 
     return (
       <div className="absolute inset-0 w-full h-full bg-[#0D0D12] flex flex-col items-center justify-center p-6 text-center text-white">
