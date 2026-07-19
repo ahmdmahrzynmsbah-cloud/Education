@@ -290,46 +290,6 @@ export default function ComprehensiveExamBuilder({
                 />
               </div>
 
-              <div className="md:col-span-2 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-2xl flex flex-col gap-3 mt-2 select-none">
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    id="isLeagueExam"
-                    checked={isLeagueExam}
-                    onChange={(e) => setIsLeagueExam(e.target.checked)}
-                    className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37] border-gray-300 dark:border-[#2D2D3D] rounded focus:ring-0 mt-0.5 cursor-pointer accent-[#00B4D8] dark:accent-[#D4AF37]"
-                  />
-                  <div className="text-right flex-1">
-                    <label htmlFor="isLeagueExam" className="text-xs font-black text-gray-800 dark:text-white cursor-pointer">
-                      إدراج كاختبار دوري في دوري Teachland الأسبوعي 🏆
-                    </label>
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold mt-1 leading-relaxed">
-                      عند تفعيل هذا الخيار، سيظهر هذا الاختبار داخل صفحة "الدوري" للطلاب. وسيحصل الطالب على نجوم تضاف لتصنيفه في الدوري الأسبوعي بناءً على درجته (3 نجوم لكل 1% من النتيجة الإجمالية للاختبار، بحد أقصى 300 نجمة لكل اختبار).
-                    </p>
-                  </div>
-                </div>
-
-                {isLeagueExam && (
-                  <div className="pt-3 border-t border-yellow-500/10 flex flex-col gap-1 text-right">
-                    <label htmlFor="scheduledTime" className="text-xs font-black text-gray-800 dark:text-white flex items-center gap-1.5 justify-start">
-                      <Clock className="w-4 h-4 text-[#00B4D8] dark:text-[#D4AF37]" />
-                      موعد وتاريخ بدء اختبار الدوري الأسبوعي *
-                    </label>
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 font-bold mb-1.5">
-                      سيتم إرسال تنبيهات ذكية تلقائية لجميع الطلاب المشتركين قبل هذا الموعد بساعة لضمان تواجدهم وعدم تفويت الاختبار.
-                    </p>
-                    <input
-                      type="datetime-local"
-                      id="scheduledTime"
-                      value={scheduledTime}
-                      onChange={(e) => setScheduledTime(e.target.value)}
-                      required={isLeagueExam}
-                      className="w-full max-w-md p-3 bg-white dark:bg-[#1C1C28] border border-gray-200 dark:border-[#2D2D3D] rounded-xl text-xs font-bold text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:focus:border-[#D4AF37]"
-                    />
-                  </div>
-                )}
-              </div>
-
               {/* isHidden Draft Toggle option */}
               <div className="md:col-span-2 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-2xl flex flex-col gap-3 mt-2 select-none">
                 <div className="flex items-start gap-3">
@@ -389,10 +349,20 @@ export default function ComprehensiveExamBuilder({
 
               <div className="space-y-6">
                 {questions.map((q, qIdx) => (
-                  <div
-                    key={q.id}
-                    className="bg-white dark:bg-[#1A1A24] p-6 rounded-3xl border border-gray-100 dark:border-[#2D2D3D] shadow-sm space-y-4 relative"
-                  >
+                  <React.Fragment key={q.id}>
+                    {qIdx > 0 && (
+                      <div className="flex items-center my-8 select-none">
+                        <div className="flex-1 border-t-2 border-dashed border-gray-200 dark:border-gray-800" />
+                        <div className="mx-4 px-4 py-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-150 dark:border-indigo-900/40 rounded-full text-[10px] font-black tracking-wider flex items-center gap-1.5 shadow-sm">
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+                          <span>فاصل بين السؤال {qIdx} والسؤال {qIdx + 1} 🔍</span>
+                        </div>
+                        <div className="flex-1 border-t-2 border-dashed border-gray-200 dark:border-gray-800" />
+                      </div>
+                    )}
+                    <div
+                      className="bg-white dark:bg-[#1A1A24] p-6 rounded-3xl border border-gray-100 dark:border-[#2D2D3D] border-r-4 border-r-indigo-500 dark:border-r-[#D4AF37] shadow-sm space-y-4 relative"
+                    >
                     <div className="flex justify-between items-center border-b border-gray-50 dark:border-[#2D2D3D]/50 pb-3">
                       <span className="text-xs font-black text-gray-700 dark:text-gray-300">السؤال رقم {qIdx + 1}</span>
                       <button
@@ -521,6 +491,7 @@ export default function ComprehensiveExamBuilder({
                       </div>
                     </div>
                   </div>
+                </React.Fragment>
                 ))}
               </div>
             </div>

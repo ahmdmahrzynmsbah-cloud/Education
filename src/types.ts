@@ -210,4 +210,27 @@ export interface FocusSession {
   createdAt: string;
 }
 
+export interface TahsiliReview {
+  id: string;
+  title: string;
+  description: string;
+  thumbnail: string;
+  promoImage?: string;
+  subject: string;
+  grade: string;
+  teacherName: string;
+  teacherId: string;
+  videoUrl: string;
+  bunnyVideoId?: string;
+  price: number;
+  discountPrice?: number;
+  lessonsCount: number;
+  duration: string;
+  status: 'published' | 'draft' | 'hidden';
+  isFeatured?: boolean;
+  enrolledStudentIds?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 

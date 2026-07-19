@@ -201,61 +201,46 @@ export async function uploadFileToFirebase(
     }
   }
 
-    // 2. Perform Resumable/Progress Upload to Firebase Storage
+  // 2. Perform upload to local /api/upload using XMLHttpRequest for progress
   return new Promise((resolve, reject) => {
-    if (!auth.currentUser) {
-      const errorMsg = 'يجب تسجيل الدخول لرفع الملفات.';
-      toast.error(errorMsg);
-      reject(new Error(errorMsg));
-      return;
-    }
+    const formData = new FormData();
+    formData.append('file', file);
 
-    // Sanitize file name to avoid invalid characters
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-    const extension = sanitizedName.split('.').pop() || '';
-    const baseName = sanitizedName.substring(0, sanitizedName.lastIndexOf('.')) || sanitizedName;
-    const uniqueFileName = `${baseName}_${Date.now()}.${extension}`;
-    const filePath = `uploads/${auth.currentUser.uid}/${uniqueFileName}`;
-    
-    const storageRef = ref(storage, filePath);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload', true);
 
-    // Metadata to help with content type
-    const metadata = {
-      contentType: file.type || 'application/octet-stream',
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const progress = (event.loaded / event.total) * 100;
+        // Keep it at max 99.9% until finished and url is returned
+        onProgress(Math.min(progress, 99.9));
+      } else {
+        onProgress(50);
+      }
     };
 
-    const uploadTask = uploadBytesResumable(storageRef, file, metadata);
-
-    uploadTask.on(
-      'state_changed',
-      (snapshot) => {
-        // Calculate progress percentage
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        
-        // Prevent showing 100% until the final URL is available
-        const displayProgress = Math.min(progress, 99.9);
-        onProgress(displayProgress);
-      },
-      (error) => {
-        console.error('Firebase Storage Upload Error:', error);
-        const translatedError = translateStorageError(error.code);
-        toast.error(translatedError);
-        reject(new Error(translatedError));
-      },
-      async () => {
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          // Upload completed successfully, get the download URL
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          const response = JSON.parse(xhr.responseText);
           onProgress(100);
-          resolve(downloadURL);
-        } catch (error) {
-          console.error('Error getting download URL:', error);
-          const translatedError = translateStorageError((error as any).code || 'unknown');
-          toast.error('تم الرفع ولكن فشل الحصول على الرابط: ' + translatedError);
-          reject(error);
+          resolve(response.url);
+        } catch (e) {
+          console.error('Failed to parse upload response:', e);
+          reject(new Error('استجابة غير صالحة من الخادم أثناء الرفع.'));
         }
+      } else {
+        console.error('Server upload failed with status:', xhr.status, xhr.responseText);
+        reject(new Error(`فشل الرفع من الخادم: رمز الحالة ${xhr.status}`));
       }
-    );
+    };
+
+    xhr.onerror = () => {
+      console.error('XHR Network error during upload');
+      reject(new Error('حدث خطأ في الاتصال بالشبكة أثناء رفع الملف.'));
+    };
+
+    xhr.send(formData);
   });
 }
 

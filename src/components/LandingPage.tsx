@@ -3,15 +3,16 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowRight, BookOpen, GraduationCap, Play, Star, Users, Trophy, Award, ChevronDown, CheckCircle2, 
   Sparkles, Mail, Send, CheckCircle, ArrowUpRight, Shield, Heart, Zap, Phone, MapPin, MessageSquare,
-  Calculator, FlaskConical, Dna, Languages, BookOpenText, Scroll, Globe, X, TrendingUp, Menu
+  Calculator, FlaskConical, Dna, Languages, BookOpenText, Scroll, Globe, X, TrendingUp, Menu, Film
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 import PremiumFeaturesSection from './PremiumFeaturesSection';
+import StudentTahsili from './StudentTahsili';
 import { usePlatformSettings } from '../context/PlatformSettingsContext';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, onSnapshot } from 'firebase/firestore';
 import * as LucideIcons from 'lucide-react';
 
 const IconMap: Record<string, any> = {
@@ -46,6 +47,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [userData, setUserData] = useState<any | null>(null);
   const [emailInput, setEmailInput] = useState('');
   const [subscribed, setSubscribed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -117,10 +119,24 @@ export default function LandingPage() {
   }, [user]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    let unsubscribeUserDoc: () => void = () => {};
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        const docRef = doc(db, 'users', currentUser.uid);
+        unsubscribeUserDoc = onSnapshot(docRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setUserData({ id: docSnap.id, ...docSnap.data() });
+          }
+        });
+      } else {
+        setUserData(null);
+      }
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      unsubscribeUserDoc();
+    };
   }, []);
 
   const faqs = [
@@ -162,6 +178,7 @@ export default function LandingPage() {
           <div className="hidden md:flex items-center gap-8 text-sm font-bold text-gray-600 dark:text-gray-300">
             <a href="#grades" className="hover:text-[#00B4D8] dark:text-[#D4AF37] transition-colors">الصفوف الدراسية</a>
             <a href="#subjects" className="hover:text-[#00B4D8] dark:text-[#D4AF37] transition-colors">المواد الدراسية</a>
+            <a href="#tahsili" className="hover:text-[#00B4D8] dark:text-[#D4AF37] transition-colors">التحصيلي</a>
             <a href="#how-it-works" className="hover:text-[#00B4D8] dark:text-[#D4AF37] transition-colors">مميزات المنصة</a>
             <a href="#faq" className="hover:text-[#00B4D8] dark:text-[#D4AF37] transition-colors">الأسئلة الشائعة</a>
           </div>
@@ -487,6 +504,29 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Tahsili Section */}
+      <section id="tahsili" className="py-20 sm:py-28 bg-[#101018] dark:bg-[#07070B] text-white relative overflow-hidden">
+        {/* Decorative background light */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-600/10 rounded-full blur-[150px] pointer-events-none" />
+        
+        <div className="container mx-auto px-4 sm:px-6 relative z-10">
+          <div className="text-center mb-12 max-w-3xl mx-auto space-y-4">
+            <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-black bg-purple-500/10 text-purple-400 border border-purple-500/20 tracking-wide uppercase">
+              <Film className="w-3.5 h-3.5 animate-pulse text-purple-500" />
+              <span>أقوى مراجعات التحصيلي الممتازة</span>
+            </span>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight leading-tight bg-gradient-to-r from-purple-400 via-pink-400 to-[#D4AF37] bg-clip-text text-transparent">
+              قسم مراجعات التحصيلي المتميزة
+            </h2>
+            <p className="text-gray-400 text-xs sm:text-base font-medium max-w-2xl mx-auto">
+              مستقبلك يبدأ من هنا. مراجعات فيديو مكثفة ومصممة بدقة متناهية بأحدث تجميعات التحصيلي، يقدمها نخبة من أفضل المعلمين لمساعدتك على تأمين نسبة +95٪ بإذن الله.
+            </p>
+          </div>
+
+          <StudentTahsili userData={userData} setUserData={setUserData} />
+        </div>
+      </section>
+
       {/* How it works / Premium Features */}
       {settings.showFeaturesSection && <PremiumFeaturesSection />}
 
@@ -641,6 +681,7 @@ export default function LandingPage() {
               <ul className="space-y-2.5 text-xs sm:text-sm font-bold">
                 <li><a href="#grades" className="hover:text-[#00B4D8] dark:hover:text-[#D4AF37] transition-colors flex items-center gap-1.5"><ArrowUpRight className="w-3 h-3 rotate-45" /> الصفوف الدراسية</a></li>
                 <li><a href="#subjects" className="hover:text-[#00B4D8] dark:hover:text-[#D4AF37] transition-colors flex items-center gap-1.5"><ArrowUpRight className="w-3 h-3 rotate-45" /> المواد الدراسية</a></li>
+                <li><a href="#tahsili" className="hover:text-[#00B4D8] dark:hover:text-[#D4AF37] transition-colors flex items-center gap-1.5"><ArrowUpRight className="w-3 h-3 rotate-45" /> قسم التحصيلي</a></li>
                 <li><a href="#how-it-works" className="hover:text-[#00B4D8] dark:hover:text-[#D4AF37] transition-colors flex items-center gap-1.5"><ArrowUpRight className="w-3 h-3 rotate-45" /> مميزات المنصة</a></li>
                 
                 <li><a href="#faq" className="hover:text-[#00B4D8] dark:hover:text-[#D4AF37] transition-colors flex items-center gap-1.5"><ArrowUpRight className="w-3 h-3 rotate-45" /> الأسئلة الأكثر شيوعاً</a></li>

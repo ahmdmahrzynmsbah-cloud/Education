@@ -116,9 +116,23 @@ export default function Auth() {
           }
 
           if (userData) {
-            // Auto-align role with what is stored in the database for supreme user experience!
+            // Strict role verification: do not allow logging in under a different role!
             if (userData.role && userData.role !== role) {
-              setRole(userData.role);
+              await auth.signOut();
+              
+              let roleNameAr = '';
+              if (userData.role === 'student') roleNameAr = 'طالب';
+              else if (userData.role === 'teacher') roleNameAr = 'معلم';
+              else if (userData.role === 'parent') roleNameAr = 'ولي أمر';
+              else if (userData.role === 'admin') roleNameAr = 'مدير النظام';
+              
+              let selectedRoleNameAr = '';
+              if (role === 'student') selectedRoleNameAr = 'طالب';
+              else if (role === 'teacher') selectedRoleNameAr = 'معلم';
+              else if (role === 'parent') selectedRoleNameAr = 'ولي أمر';
+              else if (role === 'admin') selectedRoleNameAr = 'مدير النظام';
+
+              throw new Error(`هذا الحساب مسجل كـ (${roleNameAr}) وليس كـ (${selectedRoleNameAr}). يرجى تسجيل الدخول من التبويب الصحيح.`);
             }
           } else {
             // User authenticated but no Firestore doc exists at all - auto-create a default doc instead of signing them out!
@@ -243,7 +257,12 @@ export default function Auth() {
       } else if (err.code === 'auth/network-request-failed') {
         setError('حدث خطأ في الاتصال بالشبكة. يرجى التأكد من اتصالك بالإنترنت والمحاولة مرة أخرى.');
       } else {
-        setError('حدث خطأ أثناء التسجيل: ' + (err.message || 'يرجى التأكد من صحة البيانات.'));
+        const msg = err.message || '';
+        if (msg.includes('مسجل كـ') || msg.includes('التبويب الصحيح')) {
+          setError(msg);
+        } else {
+          setError('حدث خطأ أثناء العملية: ' + msg);
+        }
       }
     } finally {
       setLoading(false);

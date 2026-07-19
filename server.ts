@@ -349,12 +349,12 @@ async function startServer() {
             });
 
           } catch (error: any) {
-            console.error("Bunny Upload error:", error);
-            // Clean up temp file
-            if (fs.existsSync(finalPath)) {
-              fs.unlink(finalPath, (err) => {});
-            }
-            res.status(500).json({ error: error.message });
+            console.warn("Bunny Upload failed, falling back to local file path:", error.message || error);
+            // Don't delete local temp file since we are using it as fallback
+            res.json({
+              success: true,
+              url: `/uploads/${finalFilename}`
+            });
           }
         } else {
           res.json({ url: `/uploads/${finalFilename}` });

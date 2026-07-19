@@ -1,7 +1,7 @@
 import React from "react";
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, HelpCircle, Lock, BookOpen, Star, MessageCircleQuestion, CheckCircle, Ticket, LogOut, Trophy, Flame, Bell, Target, ArrowLeft, Video, Bot, Users, Activity, User as UserIcon, Wallet, ArrowUpRight, ArrowDownLeft, Smartphone, CreditCard, PiggyBank, RefreshCw, Send, Sparkles, Loader2, DollarSign, Check, History, Award, Edit2, Edit3, Save, X, Clock, Trash2, Plus , Shield, Info, Menu, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Play, HelpCircle, Lock, BookOpen, Star, MessageCircleQuestion, CheckCircle, Ticket, LogOut, Trophy, Flame, Bell, Target, ArrowLeft, Video, Bot, Users, Activity, User as UserIcon, Wallet, ArrowUpRight, ArrowDownLeft, Smartphone, CreditCard, PiggyBank, RefreshCw, Send, Sparkles, Loader2, DollarSign, Check, History, Award, Edit2, Edit3, Save, X, Clock, Trash2, Plus , Shield, Info, Menu, ChevronRight, ChevronLeft, Film } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, Toaster } from 'react-hot-toast';
 import ThemeToggle from './ThemeToggle';
@@ -26,6 +26,8 @@ import ComprehensiveAnalytics from './ComprehensiveAnalytics';
 import TeachersSearchList from './TeachersSearchList';
 import ParentTeachersList from './ParentTeachersList';
 import { usePlatformSettings } from '../context/PlatformSettingsContext';
+import TeacherTahsili from './TeacherTahsili';
+import StudentTahsili from './StudentTahsili';
 
 const MOCK_TEACHER_STATS = [
   { id: 1, title: 'إجمالي الطلاب', value: '1,240', icon: Users, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
@@ -44,6 +46,127 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('home');
   const [searchParams, setSearchParams] = useSearchParams();
   const tabQuery = searchParams.get('tab');
+
+  // Tahsili Premium Feature states
+  const [hasPublishedTahsili, setHasPublishedTahsili] = useState(false);
+  const [selectedTahsiliReviewId, setSelectedTahsiliReviewId] = useState<string | null>(null);
+  const [publishedTahsiliReviews, setPublishedTahsiliReviews] = useState<any[]>([]);
+
+  // Subscription to published Tahsili Reviews
+  useEffect(() => {
+    const q = query(
+      collection(db, 'tahsili_reviews'),
+      where('status', '==', 'published')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach(docSnap => {
+        list.push({ id: docSnap.id, ...docSnap.data() });
+      });
+      list.sort((a, b) => {
+        if (a.isFeatured && !b.isFeatured) return -1;
+        if (!a.isFeatured && b.isFeatured) return 1;
+        return new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime();
+      });
+      setPublishedTahsiliReviews(list);
+      setHasPublishedTahsili(list.length > 0);
+    }, (error) => {
+      console.error('Error listening to published tahsili in Dashboard:', error);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const getMobileNavItems = () => {
+    if (userData?.role === 'admin') {
+      return [
+        { id: 'home', label: 'الرئيسية', icon: Target },
+        { id: 'admin', label: 'لوحة الإدارة', icon: Shield },
+        { id: 'admin_recharge', label: 'شحن الرصيد', icon: Ticket },
+        { id: 'admin_courses', label: 'الكورسات', icon: BookOpen },
+        { id: 'analytics', label: 'التقارير والإحصائيات', icon: Flame },
+        { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+      ];
+    } else if (userData?.role === 'teacher') {
+      return [
+        { id: 'home', label: 'الرئيسية', icon: Target },
+        { id: 'classes', label: 'فصولي وإدارة الطلاب', icon: Users },
+        { id: 'quizzes', label: 'إدارة الاختبارات والواجبات', icon: Award },
+        { id: 'tahsili', label: 'التحصيلي', icon: Film },
+        { id: 'analytics', label: 'تحليلات الأداء المتقدمة', icon: Activity },
+        { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+      ];
+    } else if (userData?.role === 'parent') {
+      return [
+        { id: 'home', label: 'الرئيسية (متابعة الأبناء)', icon: Target },
+        { id: 'quizzes', label: 'نتائج الاختبارات والتقييمات', icon: Award },
+        { id: 'schedule', label: 'الجدول الدراسي للحصص', icon: Clock },
+        { id: 'wallet', label: 'المحفظة الإلكترونية', icon: Ticket },
+        { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+      ];
+    } else {
+      const base = [
+        { id: 'home', label: 'الرئيسية', icon: Target },
+        { id: 'subjects', label: 'كورساتي', icon: BookOpen },
+        { id: 'teachers_list', label: 'المعلمون', icon: Users },
+      ];
+      return [
+        ...base,
+        { id: 'quizzes', label: 'الاختبارات والواجبات', icon: Award },
+        { id: 'badges', label: 'الأوسمة والإنجازات', icon: Trophy },
+        { id: 'schedule', label: 'الجدول الدراسي للحصص', icon: Clock },
+        { id: 'wallet', label: 'المحفظة الإلكترونية وشحن الرصيد', icon: Ticket },
+        { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+      ];
+    }
+  };
+
+  const getDesktopNavItems = () => {
+    if (userData?.role === 'admin') {
+      return [
+        { id: 'home', label: 'الرئيسية', icon: Target },
+        { id: 'admin', label: 'لوحة الإدارة', icon: Shield },
+        { id: 'admin_recharge', label: 'شحن الرصيد', icon: Ticket },
+        { id: 'admin_courses', label: 'الكورسات', icon: BookOpen },
+        { id: 'analytics', label: 'التقارير والإحصائيات', icon: Flame },
+        { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+      ];
+    } else if (userData?.role === 'teacher') {
+      return [
+        { id: 'home', label: 'الرئيسية', icon: Target },
+        { id: 'classes', label: 'فصولي', icon: Users },
+        { id: 'quizzes', label: 'الاختبارات', icon: Award },
+        { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
+        { id: 'tahsili', label: 'التحصيلي', icon: Film },
+        { id: 'analytics', label: 'التقارير', icon: Flame },
+        { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+      ];
+    } else if (userData?.role === 'parent') {
+      return [
+        { id: 'home', label: 'الرئيسية', icon: Target },
+        { id: 'quizzes', label: 'اختبارات الطالب', icon: Award },
+        { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
+        { id: 'reports', label: 'تقارير الطالب', icon: Flame },
+        { id: 'wallet', label: 'محفظة الطالب', icon: Ticket },
+        { id: 'messages', label: 'تواصل مع المعلمين', icon: Users },
+        { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+      ];
+    } else {
+      const base = [
+        { id: 'home', label: 'الرئيسية', icon: Target },
+        { id: 'subjects', label: 'موادي', icon: BookOpen },
+        { id: 'teachers_list', label: 'المعلمون', icon: Users },
+      ];
+      return [
+        ...base,
+        { id: 'quizzes', label: 'الاختبارات', icon: Award },
+        { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
+        { id: 'notes', label: 'الملاحظات السريعة', icon: Edit2 },
+        { id: 'wallet', label: 'المحفظة', icon: Ticket },
+        { id: 'faq', label: 'الأسئلة الشائعة', icon: HelpCircle },
+        { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
+      ];
+    }
+  };
 
   useEffect(() => {
     if (tabQuery) {
@@ -1739,35 +1862,7 @@ export default function Dashboard() {
               </button>
             </div>
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-              {(userData?.role === 'admin' ? [
-                { id: 'home', label: 'الرئيسية', icon: Target },
-                { id: 'admin', label: 'لوحة الإدارة', icon: Shield },
-                { id: 'admin_recharge', label: 'شحن الرصيد', icon: Ticket },
-                { id: 'admin_courses', label: 'الكورسات', icon: BookOpen },
-                { id: 'analytics', label: 'التقارير والإحصائيات', icon: Flame },
-                { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
-              ] : userData?.role === 'teacher' ? [
-                { id: 'home', label: 'الرئيسية', icon: Target },
-                { id: 'classes', label: 'فصولي وإدارة الطلاب', icon: Users },
-                { id: 'quizzes', label: 'إدارة الاختبارات والواجبات', icon: Award },
-                { id: 'analytics', label: 'تحليلات الأداء المتقدمة', icon: Activity },
-                { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
-              ] : userData?.role === 'parent' ? [
-                { id: 'home', label: 'الرئيسية (متابعة الأبناء)', icon: Target },
-                { id: 'quizzes', label: 'نتائج الاختبارات والتقييمات', icon: Award },
-                { id: 'schedule', label: 'الجدول الدراسي للحصص', icon: Clock },
-                { id: 'wallet', label: 'المحفظة الإلكترونية', icon: Ticket },
-                { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
-              ] : [
-                { id: 'home', label: 'الرئيسية', icon: Target },
-                { id: 'subjects', label: 'كورساتي', icon: BookOpen },
-                { id: 'teachers_list', label: 'المعلمون', icon: Users },
-                { id: 'quizzes', label: 'الاختبارات والواجبات', icon: Award },
-                { id: 'badges', label: 'الأوسمة والإنجازات', icon: Trophy },
-                { id: 'schedule', label: 'الجدول الدراسي للحصص', icon: Clock },
-                { id: 'wallet', label: 'المحفظة الإلكترونية وشحن الرصيد', icon: Ticket },
-                { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
-              ]).map((item) => (
+              {getMobileNavItems().map((item) => (
                 <button
                   key={item.id}
                   onClick={() => {
@@ -1815,40 +1910,7 @@ export default function Dashboard() {
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto min-h-0 custom-scrollbar">
-          {(userData?.role === 'admin' ? [
-            { id: 'home', label: 'الرئيسية', icon: Target },
-            { id: 'admin', label: 'لوحة الإدارة', icon: Shield },
-            { id: 'admin_recharge', label: 'شحن الرصيد', icon: Ticket },
-            { id: 'admin_courses', label: 'الكورسات', icon: BookOpen },
-            { id: 'analytics', label: 'التقارير والإحصائيات', icon: Flame },
-            { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
-          ] : userData?.role === 'teacher' ? [
-            { id: 'home', label: 'الرئيسية', icon: Target },
-            { id: 'classes', label: 'فصولي', icon: Users },
-            { id: 'quizzes', label: 'الاختبارات', icon: Award },
-            { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
-            { id: 'analytics', label: 'التقارير', icon: Flame },
-            { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
-          ] : userData?.role === 'parent' ? [
-            { id: 'home', label: 'الرئيسية', icon: Target },
-            { id: 'quizzes', label: 'اختبارات الطالب', icon: Award },
-            { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
-            { id: 'reports', label: 'تقارير الطالب', icon: Flame },
-            { id: 'wallet', label: 'محفظة الطالب', icon: Ticket },
-            { id: 'messages', label: 'تواصل مع المعلمين', icon: Users },
-            { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
-          ] : [
-            { id: 'home', label: 'الرئيسية', icon: Target },
-            { id: 'subjects', label: 'موادي', icon: BookOpen },
-            { id: 'teachers_list', label: 'المعلمون', icon: Users },
-            { id: 'quizzes', label: 'الاختبارات', icon: Award },
-            { id: 'schedule', label: 'الجدول الدراسي', icon: Clock },
-            { id: 'notes', label: 'الملاحظات السريعة', icon: Edit2 },
-
-            { id: 'wallet', label: 'المحفظة', icon: Ticket },
-            { id: 'faq', label: 'الأسئلة الشائعة', icon: HelpCircle },
-            { id: 'profile', label: 'الملف الشخصي', icon: UserIcon },
-          ]).map((item) => (
+          {getDesktopNavItems().map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
@@ -2316,6 +2378,143 @@ export default function Dashboard() {
                       <StudentBadges userData={userData} />
                     </section>
 
+                    {/* Tahsili Premium section */}
+                    {hasPublishedTahsili && userData?.role !== 'student' && (
+                      <section className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h2 className="text-xl font-black flex items-center gap-2 text-gray-900 dark:text-white">
+                            <Sparkles className="w-5 h-5 text-purple-600 animate-pulse" /> 
+                            <span>🎓 المراجعات والتحصيلي الممتاز</span>
+                          </h2>
+                          <button
+                            onClick={() => {
+                              setSelectedTahsiliReviewId(null);
+                              setActiveTab('tahsili');
+                            }}
+                            className="text-xs font-black text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1"
+                          >
+                            <span>عرض الكل</span>
+                            <ArrowLeft className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {publishedTahsiliReviews.slice(0, 3).map((review) => {
+                            const isEnrolled = review.enrolledStudentIds?.includes(userData?.id);
+                            const discount = review.discountPrice !== undefined && review.discountPrice !== null && review.discountPrice < review.price;
+                            const displayPrice = discount ? review.discountPrice : review.price;
+
+                            return (
+                              <div
+                                key={review.id}
+                                onClick={() => {
+                                  setSelectedTahsiliReviewId(review.id);
+                                  setActiveTab('tahsili');
+                                }}
+                                className="bg-white dark:bg-[#1A1A24] border border-gray-150 dark:border-[#2D2D3D] rounded-3xl overflow-hidden shadow-sm hover:shadow-xl transition-all flex flex-col justify-between group cursor-pointer relative"
+                              >
+                                {/* Thumbnail */}
+                                <div className="relative aspect-video bg-gray-900 overflow-hidden shrink-0">
+                                  <img 
+                                    src={review.thumbnail} 
+                                    alt={review.title} 
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+                                  
+                                  {/* Subject Badge */}
+                                  <div className="absolute top-3 right-3 flex flex-wrap gap-1.5">
+                                    <span className="px-2.5 py-1 bg-purple-600/90 text-white rounded-lg text-[10px] font-black backdrop-blur-md">
+                                      {review.subject}
+                                    </span>
+                                    <span className="px-2.5 py-1 bg-black/50 text-slate-200 rounded-lg text-[10px] font-bold backdrop-blur-md">
+                                      {review.grade}
+                                    </span>
+                                  </div>
+
+                                  {/* Featured Badge */}
+                                  <div className="absolute top-3 left-3 flex gap-1.5">
+                                    {review.isFeatured && (
+                                      <span className="px-2 py-0.5 bg-yellow-400 text-gray-900 rounded-md text-[9px] font-black flex items-center gap-0.5">
+                                        <Star className="w-2.5 h-2.5 fill-current" /> مميز
+                                      </span>
+                                    )}
+                                    <span className="px-2 py-0.5 bg-indigo-600 text-white rounded-md text-[9px] font-black">
+                                      مدفوع
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Content */}
+                                <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 text-white flex items-center justify-center font-black text-[9px]">
+                                        {review.teacherName.charAt(0)}
+                                      </div>
+                                      <span className="text-[10px] text-gray-500 dark:text-gray-400 font-bold">الأستاذ: {review.teacherName}</span>
+                                    </div>
+
+                                    <h3 className="font-black text-gray-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors line-clamp-1 text-sm">
+                                      {review.title}
+                                    </h3>
+                                    <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed font-bold line-clamp-2">
+                                      {review.description}
+                                    </p>
+                                  </div>
+
+                                  {/* Stats */}
+                                  <div className="flex items-center justify-between text-[10px] text-gray-400 dark:text-gray-500 font-bold border-t border-b border-gray-50 dark:border-[#2D2D3D] py-2">
+                                    <span className="flex items-center gap-1">
+                                      <Film className="w-3.5 h-3.5 text-purple-500" />
+                                      <span>{review.lessonsCount} درس مراجعة</span>
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="w-3.5 h-3.5 text-purple-500" />
+                                      <span>مدة {review.duration}</span>
+                                    </span>
+                                  </div>
+
+                                  {/* Footer row */}
+                                  <div className="flex items-center justify-between pt-1">
+                                    <div>
+                                      <div className="flex items-center gap-1.5">
+                                        {discount ? (
+                                          <>
+                                            <span className="text-sm font-black text-purple-600 dark:text-purple-400">
+                                              {review.discountPrice} ر.س
+                                            </span>
+                                            <span className="text-[10px] text-gray-400 line-through">
+                                              {review.price} ر.س
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <span className="text-sm font-black text-purple-600 dark:text-purple-400">
+                                            {review.price === 0 ? 'مجاني' : `${review.price} ر.س`}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {isEnrolled ? (
+                                      <span className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30 rounded-xl text-[9.5px] font-black">
+                                        مفعّل ومفتوح
+                                      </span>
+                                    ) : (
+                                      <span className="px-3 py-1.5 bg-purple-600 text-white rounded-xl text-[9.5px] font-black group-hover:bg-purple-700 transition-all flex items-center gap-1">
+                                        <span>اشترك الآن</span>
+                                        <ChevronLeft className="w-3 h-3" />
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    )}
+
                     {/* My Subjects */}
                     <section>
                       <StudentCourses userData={userData} />
@@ -2436,6 +2635,25 @@ export default function Dashboard() {
                 exit={{ opacity: 0, y: -10 }}
               >
                 <TeacherClasses userData={userData} />
+              </motion.div>
+            )}
+
+            {activeTab === 'tahsili' && (
+              <motion.div
+                key="tahsili"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                {userData?.role === 'teacher' ? (
+                  <TeacherTahsili userData={userData} />
+                ) : (
+                  <StudentTahsili 
+                    userData={userData} 
+                    setUserData={setUserData}
+                    initialSelectedReviewId={selectedTahsiliReviewId}
+                  />
+                )}
               </motion.div>
             )}
 

@@ -115,11 +115,37 @@
         "userId": { "type": "string" },
         "userName": { "type": "string" },
         "amount": { "type": "number" },
-        "type": { "type": "string", "enum": ["course_purchase", "recharge"] },
+        "type": { "type": "string", "enum": ["course_purchase", "recharge", "tahsili_purchase"] },
         "description": { "type": "string" },
         "createdAt": { "type": "string" }
       },
       "required": ["userId", "userName", "amount", "type", "createdAt"]
+    },
+    "TahsiliReview": {
+      "title": "Tahsili Premium Review",
+      "description": "Premium Tahsili course review package.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "thumbnail": { "type": "string" },
+        "promoImage": { "type": "string" },
+        "subject": { "type": "string" },
+        "grade": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "price": { "type": "number" },
+        "discountPrice": { "type": "number" },
+        "lessonsCount": { "type": "number" },
+        "duration": { "type": "string" },
+        "status": { "type": "string", "enum": ["published", "draft", "hidden"] },
+        "isFeatured": { "type": "boolean" },
+        "enrolledStudentIds": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "description", "thumbnail", "subject", "grade", "teacherName", "teacherId", "videoUrl", "price", "lessonsCount", "duration", "status"]
     }
   },
   "firestore": {
@@ -150,6 +176,10 @@
     "wallet_transactions/{transactionId}": {
       "schema": { "$ref": "WalletTransaction" },
       "description": "Wallet transaction history."
+    },
+    "tahsili_reviews/{reviewId}": {
+      "schema": { "$ref": "TahsiliReview" },
+      "description": "Premium Tahsili review packages."
     }
   }
 }
