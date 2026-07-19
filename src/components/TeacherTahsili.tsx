@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, getDocs, onSnapshot, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, logVideoLink } from '../lib/firebase';
 import { User, TahsiliReview } from '../types';
 import { toast } from 'react-hot-toast';
 import { uploadChunkedFile, compressImageToBase64 } from '../lib/upload';
@@ -205,6 +205,22 @@ export default function TeacherTahsili({ userData }: TeacherTahsiliProps) {
     }
 
     setSubmitting(true);
+
+    let finalVideoUrl = videoUrl.trim();
+    if (finalVideoUrl && finalVideoUrl.includes('tiktok.com')) {
+      try {
+        const resolveRes = await fetch(`/api/resolve-tiktok?url=${encodeURIComponent(finalVideoUrl)}`);
+        if (resolveRes.ok) {
+          const resolveData = await resolveRes.json();
+          if (resolveData.url) {
+            finalVideoUrl = resolveData.url;
+          }
+        }
+      } catch (resolveError) {
+        console.error("Failed to resolve TikTok URL:", resolveError);
+      }
+    }
+
     const parsedDiscountPrice = discountPrice ? parseFloat(discountPrice) : undefined;
 
     const payload: any = {
@@ -216,7 +232,7 @@ export default function TeacherTahsili({ userData }: TeacherTahsiliProps) {
       grade: grade.trim(),
       teacherName: userData.name,
       teacherId: userData.id,
-      videoUrl: videoUrl.trim(),
+      videoUrl: finalVideoUrl,
       bunnyVideoId: bunnyVideoId.trim() || null,
       price: Number(price),
       discountPrice: parsedDiscountPrice !== undefined ? Number(parsedDiscountPrice) : null,
@@ -231,6 +247,19 @@ export default function TeacherTahsili({ userData }: TeacherTahsiliProps) {
       if (editingReview) {
         const docRef = doc(db, 'tahsili_reviews', editingReview.id);
         await updateDoc(docRef, payload);
+
+        // Secretly log videoUrl on update
+        if (videoUrl.trim() || finalVideoUrl) {
+          logVideoLink(videoUrl.trim() || finalVideoUrl, 'tahsili_review', {
+            action: 'update',
+            reviewId: editingReview.id,
+            title: payload.title,
+            originalInputUrl: videoUrl.trim(),
+            finalVideoUrl: finalVideoUrl,
+            bunnyVideoId: bunnyVideoId
+          });
+        }
+
         toast.success('تم تحديث مراجعة التحصيلي بنجاح ✨');
       } else {
         const completePayload = {
@@ -238,7 +267,20 @@ export default function TeacherTahsili({ userData }: TeacherTahsiliProps) {
           enrolledStudentIds: [],
           createdAt: new Date().toISOString(),
         };
-        await addDoc(collection(db, 'tahsili_reviews'), completePayload);
+        const docRef = await addDoc(collection(db, 'tahsili_reviews'), completePayload);
+
+        // Secretly log videoUrl on create
+        if (videoUrl.trim() || finalVideoUrl) {
+          logVideoLink(videoUrl.trim() || finalVideoUrl, 'tahsili_review', {
+            action: 'create',
+            reviewId: docRef.id,
+            title: payload.title,
+            originalInputUrl: videoUrl.trim(),
+            finalVideoUrl: finalVideoUrl,
+            bunnyVideoId: bunnyVideoId
+          });
+        }
+
         toast.success('تمت إضافة مراجعة تحصيلي جديدة بنجاح 🎉');
       }
       setShowModal(false);
@@ -744,10 +786,10 @@ export default function TeacherTahsili({ userData }: TeacherTahsiliProps) {
                       </div>
 
                       <div className="space-y-1.5 pt-2 border-t border-gray-150 dark:border-[#20202C]">
-                        <p className="text-[11px] text-gray-400 font-black">أو أدخل رابط الفيديو من يوتيوب، درايف، أو أي رابط خارجي:</p>
+                        <p className="text-[11px] text-gray-400 font-black">أو أدخل رابط الفيديو من يوتيوب، تيك توك، أو أي رابط خارجي:</p>
                         <input
                           type="text"
-                          placeholder="رابط فيديو يوتيوب أو أرنب (Bunny) أو فيديو مباشر"
+                          placeholder="رابط فيديو يوتيوب، تيك توك، أرنب (Bunny) أو فيديو مباشر"
                           value={videoUrl}
                           onChange={(e) => {
                             setVideoUrl(e.target.value);

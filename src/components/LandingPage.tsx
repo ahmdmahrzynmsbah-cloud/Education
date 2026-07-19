@@ -157,7 +157,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0D0D12] text-gray-900 dark:text-white font-sans selection:bg-primary/30">
       {/* Navbar */}
-      <nav className="bg-white dark:bg-[#1A1A24] sticky top-0 z-50 border-b border-gray-200 dark:border-[#2D2D3D] shadow-sm">
+      <nav className="bg-white/80 dark:bg-[#1A1A24]/80 backdrop-blur-xl fixed top-0 left-0 right-0 z-50 border-b border-gray-200 dark:border-[#2D2D3D] shadow-sm">
         <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between relative">
           
           <div className="flex items-center gap-8">
@@ -203,7 +203,7 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden pt-0 pb-16 sm:pt-4 sm:pb-24 lg:pt-8 lg:pb-32 bg-white dark:bg-[#1A1A24]">
+      <section className="relative overflow-hidden pt-20 pb-16 sm:pt-28 sm:pb-24 lg:pt-32 lg:pb-32 bg-white dark:bg-[#1A1A24]">
         <div className="absolute top-0 right-0 w-[300px] sm:w-[600px] h-[300px] sm:h-[600px] bg-[#00B4D8]/5 dark:bg-[#D4AF37]/5 rounded-full blur-3xl pointer-events-none translate-x-1/2 -translate-y-1/2" />
         <div className="absolute bottom-0 left-0 w-[250px] sm:w-[500px] h-[250px] sm:h-[500px] bg-[#00B4D8]/10 dark:bg-[#D4AF37]/10 rounded-full blur-3xl pointer-events-none -translate-x-1/2 translate-y-1/2" />
 
@@ -505,20 +505,20 @@ export default function LandingPage() {
       </section>
 
       {/* Tahsili Section */}
-      <section id="tahsili" className="py-20 sm:py-28 bg-[#101018] dark:bg-[#07070B] text-white relative overflow-hidden">
+      <section id="tahsili" className="py-20 sm:py-28 bg-white dark:bg-[#07070B] text-gray-900 dark:text-white relative overflow-hidden">
         {/* Decorative background light */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-600/10 rounded-full blur-[150px] pointer-events-none" />
         
         <div className="container mx-auto px-4 sm:px-6 relative z-10">
           <div className="text-center mb-12 max-w-3xl mx-auto space-y-4">
-            <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-black bg-purple-500/10 text-purple-400 border border-purple-500/20 tracking-wide uppercase">
+            <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-black bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-500/20 tracking-wide uppercase">
               <Film className="w-3.5 h-3.5 animate-pulse text-purple-500" />
               <span>أقوى مراجعات التحصيلي الممتازة</span>
             </span>
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight leading-tight bg-gradient-to-r from-purple-400 via-pink-400 to-[#D4AF37] bg-clip-text text-transparent">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight leading-tight bg-gradient-to-r from-purple-600 via-pink-600 to-amber-600 dark:from-purple-400 dark:via-pink-400 dark:to-[#D4AF37] bg-clip-text text-transparent">
               قسم مراجعات التحصيلي المتميزة
             </h2>
-            <p className="text-gray-400 text-xs sm:text-base font-medium max-w-2xl mx-auto">
+            <p className="text-gray-600 dark:text-gray-400 text-xs sm:text-base font-medium max-w-2xl mx-auto">
               مستقبلك يبدأ من هنا. مراجعات فيديو مكثفة ومصممة بدقة متناهية بأحدث تجميعات التحصيلي، يقدمها نخبة من أفضل المعلمين لمساعدتك على تأمين نسبة +95٪ بإذن الله.
             </p>
           </div>

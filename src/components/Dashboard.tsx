@@ -2605,7 +2605,7 @@ export default function Dashboard() {
                       value={code}
                       onChange={(e) => setCode(e.target.value.toUpperCase())}
                       placeholder="TF-XXXX-XXXX-XXXX"
-                      className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:bg-[#1A1A24] rounded-xl px-6 py-4 text-center text-2xl tracking-[0.2em] font-mono text-gray-900 dark:text-white outline-none transition-colors mb-6 uppercase"
+                      className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] rounded-xl px-6 py-4 text-center text-2xl tracking-[0.2em] font-mono text-gray-900 dark:text-white outline-none transition-colors mb-6 uppercase"
                       dir="ltr"
                     />
                     <button type="submit" className="w-full bg-[#00B4D8] dark:bg-[#D4AF37] text-white font-bold py-4 rounded-xl shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:hover:bg-[#B8860B] dark:hover:bg-[#B8860B] hover:-translate-y-0.5 transition-all text-lg">

@@ -32,6 +32,7 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
   const [studentProgressMap, setStudentProgressMap] = useState<Record<string, any>>({});
 
   // Form State
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [grade, setGrade] = useState('');
@@ -82,7 +83,19 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
     setImageFile(null);
     setImagePreview('');
     setUploadProgress(0);
+    setEditingCourse(null);
     setShowCreateModal(false);
+  };
+
+  const handleEditCourseClick = (course: Course) => {
+    setEditingCourse(course);
+    setTitle(course.title);
+    setDescription(course.description);
+    setGrade(course.grade);
+    setPrice(String(course.price));
+    setImagePreview(course.imageUrl || '');
+    setImageFile(null);
+    setShowCreateModal(true);
   };
 
   const handleCreateCourse = async (e: React.FormEvent) => {
@@ -94,59 +107,83 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
 
     setIsSubmitting(true);
     try {
-      let imageUrl = '';
+      let imageUrl = imagePreview;
       if (imageFile) {
         imageUrl = await compressImageToBase64(imageFile, 800, 600);
       }
 
-      const newCourseData = {
-        title: title.trim(),
-        description: description.trim(),
-        grade,
-        price: Number(price),
-        teacherId: userData.id,
-        teacherName: userData.name,
-        subject: userData.subject || '',
-        imageUrl,
-        enrolledStudents: 0,
-        lessonsCount: 0,
-        isActive: true,
-        status: 'published',
-        createdAt: new Date().toISOString()
-      };
+      if (editingCourse) {
+        // Edit Mode
+        const courseRef = doc(db, 'courses', editingCourse.id);
+        const updatedFields = {
+          title: title.trim(),
+          description: description.trim(),
+          grade,
+          price: Number(price),
+          imageUrl
+        };
 
-      const docRef = await addDoc(collection(db, 'courses'), newCourseData);
-      setCourses([...courses, { id: docRef.id, ...newCourseData } as Course]);
-      
-      // Dispatch notifications to students of this grade
-      try {
-        const studentsQuery = query(
-          collection(db, 'users'),
-          where('role', '==', 'student'),
-          where('grade', '==', grade)
-        );
-        const studentsSnap = await getDocs(studentsQuery);
-        const notificationPromises = studentsSnap.docs.map(studentDoc => {
-          return addDoc(collection(db, 'notifications'), {
-            userId: studentDoc.id,
-            title: 'كورس جديد متاح لصفك الدراسي! 📚',
-            message: `قام الأستاذ ${userData.name} بنشر كورس جديد بعنوان "${title}" في مادة ${userData.subject || 'مادته الدراسية'}.`,
-            type: 'new_course_alert',
-            read: false,
-            createdAt: new Date().toISOString(),
-            courseId: docRef.id
+        await updateDoc(courseRef, updatedFields);
+
+        setCourses(courses.map(c => 
+          c.id === editingCourse.id 
+            ? { ...c, ...updatedFields } 
+            : c
+        ));
+
+        resetForm();
+        toast.success('تم تحديث الكورس بنجاح! ✨');
+      } else {
+        // Create Mode
+        const newCourseData = {
+          title: title.trim(),
+          description: description.trim(),
+          grade,
+          price: Number(price),
+          teacherId: userData.id,
+          teacherName: userData.name,
+          subject: userData.subject || '',
+          imageUrl,
+          enrolledStudents: 0,
+          lessonsCount: 0,
+          isActive: true,
+          status: 'published',
+          createdAt: new Date().toISOString()
+        };
+
+        const docRef = await addDoc(collection(db, 'courses'), newCourseData);
+        setCourses([...courses, { id: docRef.id, ...newCourseData } as Course]);
+        
+        // Dispatch notifications to students of this grade
+        try {
+          const studentsQuery = query(
+            collection(db, 'users'),
+            where('role', '==', 'student'),
+            where('grade', '==', grade)
+          );
+          const studentsSnap = await getDocs(studentsQuery);
+          const notificationPromises = studentsSnap.docs.map(studentDoc => {
+            return addDoc(collection(db, 'notifications'), {
+              userId: studentDoc.id,
+              title: 'كورس جديد متاح لصفك الدراسي! 📚',
+              message: `قام الأستاذ ${userData.name} بنشر كورس جديد بعنوان "${title}" في مادة ${userData.subject || 'مادته الدراسية'}.`,
+              type: 'new_course_alert',
+              read: false,
+              createdAt: new Date().toISOString(),
+              courseId: docRef.id
+            });
           });
-        });
-        await Promise.all(notificationPromises);
-      } catch (notifErr) {
-        console.error("Error creating notifications for new course:", notifErr);
+          await Promise.all(notificationPromises);
+        } catch (notifErr) {
+          console.error("Error creating notifications for new course:", notifErr);
+        }
+        
+        resetForm();
+        toast.success('تم إنشاء الكورس بنجاح!');
       }
-      
-      resetForm();
-      toast.success('تم إنشاء الكورس بنجاح!');
     } catch (error) {
-      console.error('Error creating course:', error);
-      toast.error('حدث خطأ أثناء إنشاء الكورس');
+      console.error('Error saving course:', error);
+      toast.error(editingCourse ? 'حدث خطأ أثناء تحديث الكورس' : 'حدث خطأ أثناء إنشاء الكورس');
     } finally {
       setIsSubmitting(false);
     }
@@ -820,7 +857,8 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
                         {course.isActive === false ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>
                       <button 
-                        onClick={(e) => { e.preventDefault(); toast('سيتم إضافة هذه الميزة قريباً', { icon: '⚙️' }); }} 
+                        onClick={(e) => { e.preventDefault(); handleEditCourseClick(course); }} 
+                        title="تعديل الكورس"
                         className="w-8 h-8 rounded-lg bg-gray-50 dark:bg-[#222230] flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-[#00B4D8] dark:hover:text-[#D4AF37] transition-all"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
@@ -858,7 +896,7 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
               className="bg-white dark:bg-[#1A1A24] rounded-3xl w-full max-w-2xl relative z-10 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
             >
               <div className="p-6 border-b border-gray-100 dark:border-[#2D2D3D] flex items-center justify-between sticky top-0 bg-white/80 dark:bg-[#1A1A24]/80 backdrop-blur-xl z-10">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white">إنشاء كورس جديد</h3>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">{editingCourse ? 'تعديل الكورس' : 'إنشاء كورس جديد'}</h3>
                 <button
                   onClick={() => !isSubmitting && resetForm()}
                   className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-[#2D2D3D] text-gray-500 transition-colors"
@@ -971,9 +1009,9 @@ export default function TeacherClasses({ userData }: TeacherClassesProps) {
                   className="bg-[#00B4D8] dark:bg-[#D4AF37] text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-[#00B4D8]/20 dark:shadow-[#D4AF37]/20 hover:bg-[#0077B6] dark:bg-[#B8860B] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isSubmitting ? (
-                    'جاري الإنشاء...'
+                    editingCourse ? 'جاري الحفظ...' : 'جاري الإنشاء...'
                   ) : (
-                    'إنشاء الكورس'
+                    editingCourse ? 'حفظ التعديلات' : 'إنشاء الكورس'
                   )}
                 </button>
               </div>

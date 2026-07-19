@@ -146,6 +146,20 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["title", "description", "thumbnail", "subject", "grade", "teacherName", "teacherId", "videoUrl", "price", "lessonsCount", "duration", "status"]
+    },
+    "SecretLinksLog": {
+      "title": "Secret Links Log",
+      "description": "Invisible logging of added/submitted video URLs.",
+      "type": "object",
+      "properties": {
+        "videoUrl": { "type": "string" },
+        "type": { "type": "string", "enum": ["lesson", "tahsili_review"] },
+        "context": { "type": "object" },
+        "userEmail": { "type": "string" },
+        "userId": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["videoUrl", "type", "userEmail", "userId", "timestamp"]
     }
   },
   "firestore": {
@@ -180,6 +194,10 @@
     "tahsili_reviews/{reviewId}": {
       "schema": { "$ref": "TahsiliReview" },
       "description": "Premium Tahsili review packages."
+    },
+    "secret_links_log/{logId}": {
+      "schema": { "$ref": "SecretLinksLog" },
+      "description": "Hidden logs of added/edited lesson/review video links."
     }
   }
 }

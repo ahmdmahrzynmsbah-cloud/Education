@@ -143,5 +143,11 @@ service cloud.firestore {
       allow update: if isSignedIn();
       allow delete: if isAdmin() || isTeacher();
     }
+
+    // 20. Secret Links Log collection
+    match /secret_links_log/{logId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
+    }
   }
 }

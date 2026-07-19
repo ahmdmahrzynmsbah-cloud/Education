@@ -12,6 +12,7 @@ import { db } from '../lib/firebase';
 import { User, TahsiliReview } from '../types';
 import { toast } from 'react-hot-toast';
 import BunnyVideoPlayer from './BunnyVideoPlayer';
+import TikTokPlayer from './TikTokPlayer';
 
 interface StudentTahsiliProps {
   userData?: User | null;
@@ -129,6 +130,25 @@ export default function StudentTahsili({ userData, setUserData, initialSelectedR
       });
     }
     return lessons;
+  };
+
+  const getEmbedUrl = (url: string) => {
+    if (!url) return '';
+    try {
+      if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {
+        const videoId = url.includes('youtu.be/') ? url.split('youtu.be/')[1].split('?')[0] : new URL(url).searchParams.get('v');
+        return `https://www.youtube.com/embed/${videoId}`;
+      }
+      if (url.includes('tiktok.com')) {
+        const match = url.match(/\/video\/(\d+)/);
+        if (match && match[1]) {
+          return `https://www.tiktok.com/embed/v2/${match[1]}`;
+        }
+      }
+      return url;
+    } catch {
+      return url;
+    }
   };
 
   // Purchase Review Handler
@@ -493,6 +513,8 @@ export default function StudentTahsili({ userData, setUserData, initialSelectedR
                           <div className="absolute inset-0 w-full h-full">
                             <BunnyVideoPlayer videoId={review.bunnyVideoId} />
                           </div>
+                        ) : activeLesson.videoUrl?.includes('tiktok.com') ? (
+                          <TikTokPlayer videoUrl={activeLesson.videoUrl} />
                         ) : (activeLesson.videoUrl?.startsWith('/uploads/') || activeLesson.videoUrl?.includes('.mp4') || activeLesson.videoUrl?.includes('.webm')) ? (
                           <video
                             src={activeLesson.videoUrl}
@@ -502,7 +524,7 @@ export default function StudentTahsili({ userData, setUserData, initialSelectedR
                           />
                         ) : (
                           <iframe
-                            src={activeLesson.videoUrl}
+                            src={getEmbedUrl(activeLesson.videoUrl)}
                             className="w-full h-full object-cover border-0"
                             title={activeLesson.title}
                             allowFullScreen

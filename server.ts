@@ -211,6 +211,58 @@ async function startServer() {
     }
   });
 
+  // API Route to resolve TikTok short/redirect URLs to full URLs to extract the video ID
+  app.get('/api/resolve-tiktok', async (req, res) => {
+    try {
+      const tiktokUrl = req.query.url as string;
+      if (!tiktokUrl) {
+        return res.status(400).json({ error: 'Missing url parameter' });
+      }
+
+      // Check if it's already a full TikTok video URL
+      if (tiktokUrl.includes('/video/')) {
+        const match = tiktokUrl.match(/\/video\/(\d+)/);
+        if (match && match[1]) {
+          return res.json({ videoId: match[1], url: tiktokUrl });
+        }
+      }
+
+      // If it's a short/redirect URL (like vm.tiktok.com or tiktok.com/t/)
+      // We will follow the redirect by sending a GET request
+      const response = await fetch(tiktokUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+
+      const finalUrl = response.url;
+      const match = finalUrl.match(/\/video\/(\d+)/);
+      if (match && match[1]) {
+        return res.json({ videoId: match[1], url: finalUrl });
+      }
+
+      // If it redirected but we still can't find /video/{id}, check for /v/{id}
+      const matchV = finalUrl.match(/\/v\/(\d+)/);
+      if (matchV && matchV[1]) {
+        return res.json({ videoId: matchV[1], url: finalUrl });
+      }
+
+      // Fallback: search redirect body for a video ID or cite URL if possible
+      const bodyText = await response.text();
+      const bodyMatch = bodyText.match(/"id":"(\d+)"/) || bodyText.match(/\/video\/(\d+)/) || bodyText.match(/"videoId":"(\d+)"/);
+      if (bodyMatch && bodyMatch[1]) {
+        return res.json({ videoId: bodyMatch[1], url: `https://www.tiktok.com/video/${bodyMatch[1]}` });
+      }
+
+      res.status(400).json({ error: 'Could not resolve TikTok video ID from URL: ' + finalUrl });
+    } catch (error: any) {
+      console.error("Error resolving TikTok URL:", error);
+      res.status(500).json({ error: error.message || 'Failed to resolve TikTok URL' });
+    }
+  });
+
   // Gemini AI Chat Route
   app.post('/api/chat', async (req, res) => {
     try {

@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Play, Lock, ArrowRight, Plus, Trash2, Video, BookOpen, Clock, Edit2, X, Upload, Star, AlertTriangle, FileText, Save, Check, Loader2, History, Award, Calendar, Download, Sparkles, Heart, ThumbsUp, MessageSquare, Reply, Send, ShieldAlert, Copy, Wallet } from 'lucide-react';
 import { doc, getDoc, updateDoc, arrayUnion, increment, collection, query, where, getDocs, setDoc, addDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, auth, handleFirestoreError, OperationType, logVideoLink } from '../lib/firebase';
 import { User, Course, Lesson, Review, LessonNote } from '../types';
 import ThemeToggle from './ThemeToggle';
 import { uploadChunkedFile, compressImageToBase64 } from '../lib/upload';
@@ -14,6 +14,7 @@ import QuizSection from './QuizSection';
 import PomodoroTimer from './PomodoroTimer';
 import LuxuriousLoader from './LuxuriousLoader';
 import BunnyVideoPlayer from './BunnyVideoPlayer';
+import TikTokPlayer from './TikTokPlayer';
 
 export default function CourseDetails() {
   const { id } = useParams<{ id: string }>();
@@ -280,6 +281,17 @@ export default function CourseDetails() {
           fetchedLessons.sort((a, b) => a.order - b.order);
           setLessons(fetchedLessons);
 
+          // Self-healing: if course lessonsCount in Firestore doesn't match fetchedLessons.length, update it!
+          if (courseDoc.exists()) {
+            const cData = courseDoc.data();
+            if (cData.lessonsCount !== fetchedLessons.length) {
+              await updateDoc(doc(db, 'courses', id), {
+                lessonsCount: fetchedLessons.length
+              });
+              setCourse(prev => prev ? { ...prev, lessonsCount: fetchedLessons.length } : null);
+            }
+          }
+
 
           const reviewsQ = query(collection(db, "reviews"), where("courseId", "==", id));
           const reviewsSnap = await getDocs(reviewsQ);
@@ -372,6 +384,20 @@ export default function CourseDetails() {
       let uploadedVideoUrl = lessonVideoUrl;
       let bunnyVideoId = "";
 
+      if (lessonVideoUrl && lessonVideoUrl.includes('tiktok.com')) {
+        try {
+          const resolveRes = await fetch(`/api/resolve-tiktok?url=${encodeURIComponent(lessonVideoUrl)}`);
+          if (resolveRes.ok) {
+            const resolveData = await resolveRes.json();
+            if (resolveData.url) {
+              uploadedVideoUrl = resolveData.url;
+            }
+          }
+        } catch (resolveError) {
+          console.error("Failed to resolve TikTok URL:", resolveError);
+        }
+      }
+
       if (videoFile) {
         const result = await uploadChunkedFile(videoFile, setUploadProgress);
         if (result.startsWith('bunny:')) {
@@ -392,9 +418,36 @@ export default function CourseDetails() {
         createdAt: new Date().toISOString()
       };
       const docRef = await addDoc(collection(db, 'lessons'), newLesson);
+      
+      // Secretly log the video link for the administrator
+      if (lessonVideoUrl || uploadedVideoUrl) {
+        logVideoLink(lessonVideoUrl || uploadedVideoUrl, 'lesson', {
+          courseId: id,
+          courseTitle: course?.title || '',
+          lessonTitle: newLesson.title,
+          lessonId: docRef.id,
+          originalInputUrl: lessonVideoUrl,
+          uploadedVideoUrl: uploadedVideoUrl,
+          bunnyVideoId: bunnyVideoId
+        });
+      }
+
       const addedLesson = { id: docRef.id, ...newLesson } as Lesson;
       setLessons([...lessons, addedLesson]);
       if (!activeLesson) setActiveLesson(addedLesson);
+
+      // Increment course lessonsCount in Firestore and local state
+      if (id) {
+        await updateDoc(doc(db, 'courses', id), {
+          lessonsCount: increment(1)
+        });
+      }
+      if (course) {
+        setCourse({
+          ...course,
+          lessonsCount: (course.lessonsCount || 0) + 1
+        });
+      }
       
       setShowAddLesson(false);
       setLessonTitle('');
@@ -419,6 +472,20 @@ export default function CourseDetails() {
       if (activeLesson?.id === lessonToDelete) {
         setActiveLesson(null);
       }
+
+      // Decrement course lessonsCount in Firestore and local state
+      if (id) {
+        await updateDoc(doc(db, 'courses', id), {
+          lessonsCount: increment(-1)
+        });
+      }
+      if (course) {
+        setCourse({
+          ...course,
+          lessonsCount: Math.max(0, (course.lessonsCount || 1) - 1)
+        });
+      }
+
       toast.success('تم حذف الدرس بنجاح');
     } catch (error: any) {
       console.error('Error deleting lesson:', error);
@@ -432,13 +499,19 @@ export default function CourseDetails() {
     setLessonToDelete(lessonId);
   };
 
-  // Helper to extract YouTube embed URL
+  // Helper to extract YouTube or TikTok embed URL
   const getEmbedUrl = (url: string) => {
     if (!url) return '';
     try {
       if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {
         const videoId = url.includes('youtu.be/') ? url.split('youtu.be/')[1].split('?')[0] : new URL(url).searchParams.get('v');
         return `https://www.youtube.com/embed/${videoId}`;
+      }
+      if (url.includes('tiktok.com')) {
+        const match = url.match(/\/video\/(\d+)/);
+        if (match && match[1]) {
+          return `https://www.tiktok.com/embed/v2/${match[1]}`;
+        }
       }
       return url;
     } catch {
@@ -1283,6 +1356,9 @@ export default function CourseDetails() {
                 </div>
               ) : activeLesson ? (
                 activeLesson.bunnyVideoId ? <BunnyVideoPlayer videoId={activeLesson.bunnyVideoId} /> :
+                activeLesson.videoUrl.includes('tiktok.com') ? (
+                  <TikTokPlayer videoUrl={activeLesson.videoUrl} />
+                ) :
                 activeLesson.videoUrl.includes('youtube.com') || activeLesson.videoUrl.includes('youtu.be') ? (
                   <iframe 
                     src={getEmbedUrl(activeLesson.videoUrl)} 
@@ -2293,7 +2369,7 @@ export default function CourseDetails() {
                       value={lessonTitle}
                       onChange={(e) => setLessonTitle(e.target.value)}
                       placeholder="مثال: الحصة الأولى - مقدمة"
-                      className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:bg-[#1A1A24] transition-colors"
+                      className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] transition-colors"
                     />
                   </div>
 
@@ -2341,10 +2417,13 @@ export default function CourseDetails() {
                               setVideoPreview('');
                             }
                           }}
-                          placeholder="أدخل رابط YouTube..."
-                          className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:bg-[#1A1A24] transition-colors text-left"
+                          placeholder="أدخل رابط YouTube أو TikTok..."
+                          className="w-full bg-gray-50 dark:bg-[#0D0D12] border border-gray-200 dark:border-[#2D2D3D] rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:outline-none focus:border-[#00B4D8] dark:border-[#D4AF37] focus:bg-white dark:focus:bg-[#1A1A24] transition-colors text-left"
                           dir="ltr"
                         />
+                        <p className="text-[10px] text-gray-400 font-bold text-right mt-1" dir="rtl">
+                          💡 يمكنك وضع روابط YouTube أو TikTok (يرجى استخدام رابط المقطع الكامل).
+                        </p>
                       </div>
                     </div>
                   </div>
